@@ -166,10 +166,12 @@ def project_connectors(project_id):
     config=values.get("config") or {}
     if not name or len(name)>80 or not isinstance(config,dict):return error("Invalid connector")
     if values.get("type","http")!="http":return error("Only HTTP connectors are supported")
-    url=config.get("url") or config.get("base_url")
+    url=config.get("base_url") or config.get("url")
     from urllib.parse import urlparse
     if not isinstance(url,str) or urlparse(url).scheme!="https" or not urlparse(url).hostname:
         return error("HTTPS destination required")
+    config={**config,"base_url":url}
+    config.pop("url",None)
     secret=values.get("secret") or ""
     if secret and (not isinstance(secret,str) or len(secret)>4096):return error("Invalid secret")
     from anyapi.security import secret_hint
