@@ -89,3 +89,15 @@ def test_database_migration_hardening_present():
     sql=Path("supabase/migrations/0003_anyapi_security_indexes.sql").read_text()
     assert "REVOKE EXECUTE ON FUNCTION public.handle_new_user()" in sql
     assert "CREATE INDEX IF NOT EXISTS api_keys_endpoint_idx" in sql
+
+def test_http_connector_egress_disabled_without_protected_network(monkeypatch):
+    from anyapi.runtime.safe_http import request, EgressBlocked
+    monkeypatch.delenv("ANYAPI_HTTP_EGRESS_ENABLED",raising=False)
+    with pytest.raises(EgressBlocked,match="protected egress"):
+        request("GET","https://example.com")
+
+
+def test_project_connectors_normalize_base_url():
+    from pathlib import Path
+    content=Path("anyapi/management.py").read_text()
+    assert 'config={**config,"base_url":url}' in content
