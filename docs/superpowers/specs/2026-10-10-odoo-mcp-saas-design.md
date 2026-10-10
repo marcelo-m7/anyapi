@@ -76,7 +76,7 @@ For tool replies: return structured, bounded JSON with stable tool-specific erro
 
 ## 7. Data model (proposed; do not execute yet)
 
-All new tables are in public with RLS enabled before grants; only columns necessary for V1 are listed. No existing AnyAPI rows or tables are modified:
+Tenant-facing tables belong in public with RLS enabled before grants; OAuth code/token/client internals must be in a non-exposed private schema, or strictly service-only tables with no anon/authenticated grants. Only columns necessary for V1 are listed. No existing AnyAPI rows or tables are modified:
 
 | Table | Minimum columns / responsibility |
 | --- | --- |
@@ -89,7 +89,7 @@ All new tables are in public with RLS enabled before grants; only columns necess
 | odoo_mcp_audit_events | id, owner_id, server_id, request_id, actor_client_id, tool_name, model_name, action, allowed, status, duration_ms, occurred_at, redacted_error |
 | odoo_mcp_rate_limits | server_id, actor_key_hash, window_start, count; short-lived atomic quotas |
 
-Code/token internals may use a separate private schema or tightly restricted service-only tables when OAuth grant data is not safe to expose via the Data API. No browser-readable OAuth secret/token records. Include indexes on all owner_id, server_id, status, token hashes, expiry and audit timestamps; avoid unnecessary exposed SECURITY DEFINER functions. Use atomically enforced token exchange and rate limits; do not implement read-then-write races.
+OAuth client registration records are global service-managed metadata, not tenant-owned business records. Keep code/token internals private and unavailable from the Data API; validate client metadata document URLs against SSRF and redirect attacks before making outbound requests. No browser-readable OAuth secret/token records. Include indexes on all owner_id, server_id, status, token hashes, expiry and audit timestamps; avoid unnecessary exposed SECURITY DEFINER functions. Use atomically enforced token exchange and rate limits; do not implement read-then-write races.
 
 Migration convention must be reviewed against the currently applied Supabase history and the pending PR #2 migrations. Run Supabase security and performance advisors before staging approval. Never use service_role from the browser.
 
