@@ -11,3 +11,7 @@ class AppError(Exception):
 
     def to_dict(self) -> dict:
         return {"code": self.code, "message": self.message}
+
+
+class OAuthError(Exception):
+    """Non-disclosing OAuth client/grant rejection."""
