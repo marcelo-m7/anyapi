@@ -27,7 +27,7 @@ def database():
         admin.execute("grant usage on schema auth to authenticated")
         admin.execute("grant execute on function auth.uid() to authenticated")
         admin.execute("insert into auth.users(id) values (%s), (%s)", (owner_a, owner_b))
-        admin.execute(MIGRATION.read_text())
+        # OAuth integration tests may apply this same migration first.\n        if admin.execute("select to_regclass('public.odoo_mcp_connections')").fetchone()[0] is None:\n            admin.execute(MIGRATION.read_text())
         yield owner_a, owner_b
 
 
