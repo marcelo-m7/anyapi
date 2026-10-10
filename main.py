@@ -20,7 +20,7 @@ app.config.update(
     ANYAPI_PUBLIC_URL=settings.public_base_url,
 )
 app.extensions["anyapi.supabase"] = Supabase(settings)
-app.extensions["anyapi.secrets"] = SecretBox(settings.encryption_key_material)
+app.extensions["anyapi.secrets"] = SecretBox(settings.encryption_key_material or settings.secret_key)
 app.extensions["anyapi.runner"] = CodeRunner(settings.runner_url, settings.runner_token)
 app.jinja_env.globals["csrf_token"] = csrf_token
 app.register_blueprint(auth_bp)
