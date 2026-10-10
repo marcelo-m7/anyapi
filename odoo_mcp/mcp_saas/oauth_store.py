@@ -140,14 +140,33 @@ class OAuthStore:
     def revoke_token(self, raw_token: str, client_id: str | None = None) -> bool:
         if not raw_token:
             return False
+        hashed = _digest(raw_token)
         with psycopg.connect(self._dsn, connect_timeout=5) as connection:
-            with connection.cursor() as cur:
+            with connection.cursor(row_factory=dict_row) as cur:
+                if client_id is None:
+                    cur.execute(
+                        """select token_family_id
+                           from odoo_mcp_private.odoo_mcp_oauth_tokens
+                           where access_hash=%s or refresh_hash=%s
+                           limit 1 for update""",
+                        (hashed, hashed),
+                    )
+                else:
+                    cur.execute(
+                        """select token_family_id
+                           from odoo_mcp_private.odoo_mcp_oauth_tokens
+                           where client_id=%s and (access_hash=%s or refresh_hash=%s)
+                           limit 1 for update""",
+                        (client_id, hashed, hashed),
+                    )
+                row = cur.fetchone()
+                if not row:
+                    return False
                 cur.execute(
                     """update odoo_mcp_private.odoo_mcp_oauth_tokens
-                       set revoked_at=now()
-                       where (access_hash=%s or refresh_hash=%s) and revoked_at is null
-                         and (%s::text is null or client_id=%s)""",
-                    (_digest(raw_token), _digest(raw_token), client_id, client_id),
+                       set revoked_at=coalesce(revoked_at,now())
+                       where token_family_id=%s""",
+                    (row["token_family_id"],),
                 )
                 return cur.rowcount > 0
 
