@@ -1,7 +1,7 @@
 # Odoo MCP SaaS — Architecture and Product Design (V1)
 
 **Date:** 2026-10-10  
-**Status:** Design candidate — awaiting owner review; implementation NOT authorized by this document  
+**Status:** APPROVED for implementation planning by owner on 2026-10-10; implementation execution requires separate approval of the written plan  
 **Repository:** marcelo-m7/anyapi  
 **Branch:** feat/odoo-mcp-saas (forked from main at 4e58e596b6ee8fa40cddaf7ddc29f7dc6816b01b)  
 **Supabase:** aiosqtyvzopdtsolkpfg (shared infrastructure, isolated Odoo MCP tables)  
@@ -152,4 +152,4 @@ Primary risks and mitigations:
 - Supabase Auth/RLS: https://supabase.com/docs/guides/auth/row-level-security
 - AnyAPI PR #2 (separate work): https://github.com/marcelo-m7/anyapi/pull/2
 
-**Design-review gate:** the owner reviews this committed spec. Only after approval invoke the writing-plans process and prepare executable tasks. No product implementation, SQL migrations or Vercel deployment in this design commit.
+**Design-review gate:** passed (owner approved on 2026-10-10). Implementation plan: docs/superpowers/plans/2026-10-10-odoo-mcp-saas-v1.md. Product code, SQL migrations and Vercel deployment are gated on separate approval of that plan and an execution method.
