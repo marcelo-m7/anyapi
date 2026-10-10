@@ -55,7 +55,7 @@ class OAuthStore:
 
     def consume_code(self, raw: str, client_id: str, redirect_uri: str, resource: str,
                      verifier: str | None = None) -> dict:
-        if not (raw and client_id and redirect_uri and resource):
+        if not (raw and client_id and redirect_uri and resource and verifier):
             raise OAuthError("invalid_grant")
         with psycopg.connect(self._dsn, connect_timeout=5) as connection:
             with connection.cursor(row_factory=dict_row) as cur:
@@ -69,7 +69,7 @@ class OAuthStore:
                     (_digest(raw), client_id, redirect_uri, resource),
                 )
                 row = cur.fetchone()
-                if row is not None and verifier is not None:
+                if row is not None:
                     from authlib.oauth2.rfc7636 import create_s256_code_challenge
                     if create_s256_code_challenge(verifier) != row["pkce_challenge"]:
                         raise OAuthError("invalid_grant")
