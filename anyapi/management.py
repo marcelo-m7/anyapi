@@ -105,7 +105,7 @@ def rollback(endpoint_id):
     if not u:return error("unauthorized",401)
     data=request.get_json(silent=True) or {}
     try:
-        return jsonify(db.rpc("rollback_endpoint",{"p_endpoint_id":endpoint_id,"p_version":int(data["version"])}))
+        return jsonify(db.rpc("rollback_endpoint",{"p_endpoint_id":endpoint_id,"p_version_id":str(data["version_id"])}))
     except (SupabaseError,ValueError,KeyError) as exc:return error(str(exc))
 
 @bp.post("/endpoints/<endpoint_id>/test")
