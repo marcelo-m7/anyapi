@@ -10,16 +10,27 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: odoo_mcp_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_ephemeral_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d odoo_mcp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ODOO_MCP_TEST_DB_DSN: postgresql://postgres:ci_ephemeral_only@localhost:5432/odoo_mcp_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.12'
-      - name: Generate Supabase migration filename (CLI convention)
-        run: |
-          cd odoo_mcp
-          npx --yes supabase@latest migration new odoo_mcp_init
-          find supabase/migrations -maxdepth 1 -name '*_odoo_mcp_init.sql' -printf 'MIGRATION_GENERATED=%f\n'
       - name: Generate pinned lock file (review artifact)
         run: |
           cd odoo_mcp
