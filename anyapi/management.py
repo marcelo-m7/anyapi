@@ -71,7 +71,7 @@ def create_endpoint(project_id):
     name=str(data.get("name","")).strip()[:80]
     if not name:return error("Endpoint name is required")
     try:
-        return jsonify(db.insert("endpoints",{"project_id":project_id,"owner_id":u["id"],"name":name,"slug":slug,"method":data.get("method","POST")})),201
+        return jsonify(db.insert("endpoints",{"project_id":project_id,"owner_id":u["id"],"name":name,"slug":slug,"method":data.get("method","POST"),"processor":{"type":"edge_pipeline","steps":[],"output":""}})),201
     except SupabaseError as exc:return error(exc.message,409 if exc.status==409 else 400)
 
 @bp.route("/endpoints/<endpoint_id>",methods=["GET","PATCH"])
