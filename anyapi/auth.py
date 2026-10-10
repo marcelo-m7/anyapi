@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import json
 import secrets
 import time
 from functools import wraps
@@ -54,29 +55,44 @@ def verify_csrf() -> None:
 
 def _store_session(data: dict[str, Any]) -> None:
     user = data.get("user") or {}
-    session["auth"] = {
+    auth_data = {
         "access_token": data["access_token"],
         "refresh_token": data["refresh_token"],
         "expires_at": int(data.get("expires_at") or time.time() + int(data.get("expires_in", 3600))),
         "user_id": user.get("id"),
         "email": user.get("email"),
     }
+    box = current_app.extensions["anyapi.secrets"]
+    session["auth_encrypted"] = box.encrypt(json.dumps(auth_data))
+    session.pop("auth", None)
     session.permanent = True
+
+
+def _get_stored_auth() -> dict[str, Any] | None:
+    token = session.get("auth_encrypted")
+    if not token:
+        return None
+    try:
+        return json.loads(current_app.extensions["anyapi.secrets"].decrypt(token))
+    except (ValueError, RuntimeError, TypeError):
+        clear_session()
+        return None
 
 
 def clear_session() -> None:
     session.pop("auth", None)
+    session.pop("auth_encrypted", None)
     session.pop("profile", None)
 
 
 def _load_auth() -> dict[str, Any] | None:
-    auth = session.get("auth")
+    auth = _get_stored_auth()
     if not auth:
         return None
     if auth.get("expires_at", 0) - _REFRESH_MARGIN < time.time():
         try:
             _store_session(sb().refresh(auth["refresh_token"]))
-            auth = session["auth"]
+            auth = _get_stored_auth()
         except SupabaseError:
             clear_session()
             return None
