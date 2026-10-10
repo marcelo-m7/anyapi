@@ -76,3 +76,16 @@ def test_visual_schema_invalid_input_rejected():
     from anyapi.runtime.schema import schema_problems
     problems=schema_problems({"type":"mystery"})
     assert problems
+
+def test_rollback_rpc_contract_uses_version_uuid():
+    from pathlib import Path
+    source=Path("anyapi/management.py").read_text()
+    assert '"p_version_id"' in source
+    assert '"p_version":int(' not in source
+
+
+def test_database_migration_hardening_present():
+    from pathlib import Path
+    sql=Path("supabase/migrations/0003_anyapi_security_indexes.sql").read_text()
+    assert "REVOKE EXECUTE ON FUNCTION public.handle_new_user()" in sql
+    assert "CREATE INDEX IF NOT EXISTS api_keys_endpoint_idx" in sql
