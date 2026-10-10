@@ -31,7 +31,7 @@ def records():
         if db.execute("select to_regclass('public.odoo_mcp_servers')").fetchone()[0] is None:
             db.execute(MIGRATION.read_text())
         db.execute("insert into auth.users(id) values (%s),(%s)",(a,b))
-        for owner,conn,server,marker in ((a,c1,s1,"a"),(b,c2,s2,"b")):
+        for owner,conn,server,marker in ((a,c1,s1,"c"),(b,c2,s2,"d")):
             db.execute("""insert into public.odoo_mcp_connections
                 (id,owner_id,label,base_url,database,status)
                 values (%s,%s,'Test','https://odoo.example.org','db','healthy')""",(conn,owner))
@@ -50,7 +50,7 @@ def records():
 def test_owner_a_reads_only_its_connection_and_secret(records):
     a,b,s1,s2=records
     result=ContextResolver(DSN,KEY).resolve({
-        "owner_id":a,"server_id":s1,"scopes":["odoo:read"]},"a"*40)
+        "owner_id":a,"server_id":s1,"scopes":["odoo:read"]},"c"*40)
     assert result.owner_id==a
     assert result.server_id==s1
     assert result.api_key=="a-secret"
@@ -68,7 +68,7 @@ def test_grant_for_server_a_cannot_reach_server_b_public_id(records):
     a,b,s1,s2=records
     with pytest.raises(AppError):
         ContextResolver(DSN,KEY).resolve({
-            "owner_id":a,"server_id":s1,"scopes":["odoo:read"]},"b"*40)
+            "owner_id":a,"server_id":s1,"scopes":["odoo:read"]},"d"*40)
 
 
 def test_denies_missing_oauth_read_scope(records):
