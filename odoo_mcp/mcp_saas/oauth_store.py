@@ -87,9 +87,19 @@ class OAuthStore:
                     raise OAuthError("invalid_grant")
                 return dict(row)
 
-    def issue_tokens(self, owner_id: str, server_id: str, client_id: str,
-                     resource: str, scopes: list[str]) -> dict:
+    @staticmethod
+    def hash_token(value: str) -> str:
+        return _digest(value)
+
+    def issue_tokens(self, owner_id: str | dict, server_id: str | None = None,
+                     client_id: str | None = None, resource: str | None = None,
+                     scopes: list[str] | None = None) -> dict:
         """Create hashed opaque credentials; caller must have validated the grant."""
+        if isinstance(owner_id, dict):
+            grant = owner_id
+            owner_id, server_id, client_id, resource, scopes = (
+                grant["owner_id"], grant["server_id"], grant["client_id"],
+                grant["resource"], grant["scopes"])
         owner_id, server_id = _uuid(owner_id), _uuid(server_id)
         if not client_id or not resource or not scopes or not set(scopes) <= {"odoo:read", "odoo:write"}:
             raise OAuthError("invalid_grant")
@@ -98,8 +108,8 @@ class OAuthStore:
             with connection.cursor() as cur:
                 cur.execute(
                     """insert into odoo_mcp_private.odoo_mcp_oauth_tokens
-                       (owner_id,server_id,client_id,access_hash,refresh_hash,scopes,resource,expires_at)
-                       select %s,%s,%s,%s,%s,%s,%s,now() + interval '15 minutes'
+                       (owner_id,server_id,client_id,access_hash,refresh_hash,scopes,resource,expires_at,refresh_expires_at)
+                       select %s,%s,%s,%s,%s,%s,%s,now() + interval '15 minutes',now() + interval '30 days'
                        where exists(select 1 from public.odoo_mcp_servers
                                     where id=%s and owner_id=%s and enabled=true)""",
                     (owner_id, server_id, client_id, _digest(access), _digest(refresh),
@@ -130,7 +140,7 @@ class OAuthStore:
                 return {**dict(record), "owner_id": str(record["owner_id"]),
                         "server_id": str(record["server_id"])}
 
-    def revoke_token(self, raw_token: str) -> bool:
+    def revoke_token(self, raw_token: str, client_id: str | None = None) -> bool:
         if not raw_token:
             return False
         with psycopg.connect(self._dsn, connect_timeout=5) as connection:
@@ -138,41 +148,65 @@ class OAuthStore:
                 cur.execute(
                     """update odoo_mcp_private.odoo_mcp_oauth_tokens
                        set revoked_at=now()
-                       where (access_hash=%s or refresh_hash=%s) and revoked_at is null""",
-                    (_digest(raw_token), _digest(raw_token)),
+                       where (access_hash=%s or refresh_hash=%s) and revoked_at is null
+                         and (%s is null or client_id=%s)""",
+                    (_digest(raw_token), _digest(raw_token), client_id, client_id),
                 )
                 return cur.rowcount > 0
 
     def rotate_refresh(self, raw_token: str, client_id: str, resource: str) -> dict:
-        """Atomic refresh, old credentials are invalidated by the first winner."""
+        """Atomic rotation; replay revokes the complete refresh-token family."""
         if not raw_token or not client_id or not resource:
             raise OAuthError("invalid_grant")
         access, refresh = secrets.token_urlsafe(48), secrets.token_urlsafe(48)
+        result = None
         with psycopg.connect(self._dsn, connect_timeout=5) as connection:
             with connection.cursor(row_factory=dict_row) as cur:
                 cur.execute(
-                    """update odoo_mcp_private.odoo_mcp_oauth_tokens
-                       set revoked_at=now(), rotated_at=now()
-                       where refresh_hash=%s and client_id=%s and resource=%s
-                         and revoked_at is null
-                         and exists(select 1 from public.odoo_mcp_servers
-                           where id=server_id and owner_id=odoo_mcp_oauth_tokens.owner_id
-                             and enabled=true)
-                       returning owner_id,server_id,scopes""",
-                    (_digest(raw_token), client_id, resource),
+                    """select t.owner_id,t.server_id,t.scopes,t.client_id,t.resource,
+                              t.token_family_id,t.refresh_expires_at,t.rotated_at,
+                              t.revoked_at,s.enabled
+                       from odoo_mcp_private.odoo_mcp_oauth_tokens t
+                       join public.odoo_mcp_servers s
+                         on s.id=t.server_id and s.owner_id=t.owner_id
+                       where t.refresh_hash=%s and t.client_id=%s and t.resource=%s
+                       for update of t""",
+                    (_digest(raw_token),client_id,resource),
                 )
-                prior = cur.fetchone()
-                if prior is None:
+                previous = cur.fetchone()
+                if previous is None:
                     raise OAuthError("invalid_grant")
-                cur.execute(
-                    """insert into odoo_mcp_private.odoo_mcp_oauth_tokens
-                       (owner_id,server_id,client_id,access_hash,refresh_hash,scopes,resource,expires_at)
-                       values (%s,%s,%s,%s,%s,%s,%s,now() + interval '15 minutes')""",
-                    (prior["owner_id"],prior["server_id"],client_id,
-                     _digest(access),_digest(refresh),prior["scopes"],resource),
-                )
-                return {"access_token": access, "refresh_token": refresh, "token_type": "Bearer",
-                        "expires_in": 900, "scope": " ".join(prior["scopes"])}
+                if previous["rotated_at"] is not None:
+                    # Persistent family revocation commits before the rejection.
+                    cur.execute(
+                        """update odoo_mcp_private.odoo_mcp_oauth_tokens
+                           set revoked_at=coalesce(revoked_at,now())
+                           where token_family_id=%s""", (previous["token_family_id"],))
+                elif (previous["revoked_at"] is not None or not previous["enabled"]
+                      or previous["refresh_expires_at"] is None
+                      or previous["refresh_expires_at"] <= datetime.now(timezone.utc)):
+                    pass
+                else:
+                    cur.execute(
+                        """update odoo_mcp_private.odoo_mcp_oauth_tokens
+                           set revoked_at=now(),rotated_at=now()
+                           where refresh_hash=%s and revoked_at is null""", (_digest(raw_token),),
+                    )
+                    cur.execute(
+                        """insert into odoo_mcp_private.odoo_mcp_oauth_tokens
+                           (owner_id,server_id,client_id,access_hash,refresh_hash,scopes,resource,
+                            token_family_id,expires_at,refresh_expires_at)
+                           values (%s,%s,%s,%s,%s,%s,%s,%s,now()+interval '15 minutes',%s)""",
+                        (previous["owner_id"],previous["server_id"],client_id,
+                         _digest(access),_digest(refresh),previous["scopes"],resource,
+                         previous["token_family_id"],previous["refresh_expires_at"]),
+                    )
+                    result = {"access_token": access, "refresh_token": refresh,
+                              "token_type": "Bearer", "expires_in": 900,
+                              "scope": " ".join(previous["scopes"])}
+        if result is None:
+            raise OAuthError("invalid_grant")
+        return result
 
     def get_authorized_server(self, public_id: str, owner_id: str) -> dict | None:
         with psycopg.connect(self._dsn, connect_timeout=5) as connection:
