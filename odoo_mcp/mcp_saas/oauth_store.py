@@ -56,20 +56,33 @@ class OAuthStore:
                 )
         return raw
 
-    def consume_code(self, raw: str, client_id: str, redirect_uri: str, resource: str) -> dict:
+    def consume_code(self, raw: str, client_id: str, redirect_uri: str, resource: str,
+                     verifier: str | None = None) -> dict:
         if not (raw and client_id and redirect_uri and resource):
             raise OAuthError("invalid_grant")
         with psycopg.connect(self._dsn, connect_timeout=5) as connection:
             with connection.cursor(row_factory=dict_row) as cur:
+                # Serialize concurrent exchanges before verifying and consuming a code.
                 cur.execute(
-                    """update odoo_mcp_private.odoo_mcp_oauth_codes
-                       set consumed_at=now()
+                    """select owner_id,server_id,client_id,resource,scopes,pkce_challenge
+                       from odoo_mcp_private.odoo_mcp_oauth_codes
                        where code_hash=%s and client_id=%s and redirect_uri=%s
                          and resource=%s and consumed_at is null and expires_at > now()
-                       returning owner_id,server_id,client_id,resource,scopes,pkce_challenge""",
+                       for update""",
                     (_digest(raw), client_id, redirect_uri, resource),
                 )
                 row = cur.fetchone()
+                if row is not None and verifier is not None:
+                    from authlib.oauth2.rfc7636 import create_s256_code_challenge
+                    if create_s256_code_challenge(verifier) != row["pkce_challenge"]:
+                        raise OAuthError("invalid_grant")
+                if row is not None:
+                    cur.execute(
+                        """update odoo_mcp_private.odoo_mcp_oauth_codes
+                           set consumed_at=now()
+                           where code_hash=%s and consumed_at is null""",
+                        (_digest(raw),),
+                    )
                 if not row:
                     raise OAuthError("invalid_grant")
                 return dict(row)
@@ -160,3 +173,20 @@ class OAuthStore:
                 )
                 return {"access_token": access, "refresh_token": refresh, "token_type": "Bearer",
                         "expires_in": 900, "scope": " ".join(prior["scopes"])}
+
+    def get_authorized_server(self, public_id: str, owner_id: str) -> dict | None:
+        with psycopg.connect(self._dsn, connect_timeout=5) as connection:
+            with connection.cursor(row_factory=dict_row) as cur:
+                cur.execute(
+                    """select id,owner_id,enabled from public.odoo_mcp_servers
+                       where public_id=%s and owner_id=%s and enabled=true""",
+                    (public_id, _uuid(owner_id)),
+                )
+                record = cur.fetchone()
+                return dict(record) if record else None
+
+    def issue_tokens_from_grant(self, grant: dict) -> dict:
+        return self.issue_tokens(
+            str(grant["owner_id"]), str(grant["server_id"]), grant["client_id"],
+            grant["resource"], list(grant["scopes"]),
+        )
