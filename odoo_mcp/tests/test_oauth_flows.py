@@ -4,6 +4,7 @@ import hashlib
 from uuid import uuid4
 
 import pytest
+pytest.importorskip('authlib')
 from authlib.oauth2.rfc7636 import create_s256_code_challenge
 
 from mcp_saas.oauth import AuthorizationService, ClientMetadataResolver
