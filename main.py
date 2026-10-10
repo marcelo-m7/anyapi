@@ -50,10 +50,43 @@ def dashboard():
 <script>
 const csrf={{ csrf|tojson }};
 async function api(path,options={}){let r=await fetch('/_api'+path,{...options,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf,...(options.headers||{})}});let j=await r.json();if(!r.ok)throw Error(j.error||JSON.stringify(j));return j}
-async function load(){try{let data=await api('/projects');document.getElementById('projects').replaceChildren(...data.map(p=>{let x=document.createElement('article');let h=document.createElement('h2');h.textContent=p.name;let b=document.createElement('button');b.textContent='Create endpoint';b.onclick=()=>newEndpoint(p.id);x.append(h,document.createTextNode(p.slug+' · '+p.description),b);let area=document.createElement('div');x.append(area);api('/projects/'+p.id+'/endpoints').then(es=>{es.forEach(e=>{let a=document.createElement('a');a.href='/'+encodeURIComponent({{ user.username|tojson }})+'/'+encodeURIComponent(p.slug)+'/'+encodeURIComponent(e.slug);a.textContent=e.method+' '+e.slug+' ('+e.status+')';area.append(a,document.createElement('br'))})});return x}));}catch(e){document.getElementById('projects').textContent=e.message}}
+async function load(){try{let data=await api('/projects');document.getElementById('projects').replaceChildren(...data.map(p=>{let x=document.createElement('article');let h=document.createElement('h2');h.textContent=p.name;let b=document.createElement('button');b.textContent='Create endpoint';b.onclick=()=>newEndpoint(p.id);x.append(h,document.createTextNode(p.slug+' · '+p.description),b);let area=document.createElement('div');x.append(area);api('/projects/'+p.id+'/endpoints').then(es=>{es.forEach(e=>{let a=document.createElement('a');a.href='/studio/endpoints/'+encodeURIComponent(e.id);a.textContent=e.method+' '+e.slug+' ('+e.status+')';area.append(a,document.createElement('br'))})});return x}));}catch(e){document.getElementById('projects').textContent=e.message}}
 async function newProject(){let name=prompt('Project name');if(!name)return;let slug=prompt('Project slug',name.toLowerCase().replace(/[^a-z0-9]+/g,'-'));if(!slug)return;try{await api('/projects',{method:'POST',body:JSON.stringify({name,slug})});load()}catch(e){alert(e.message)}}
 async function newEndpoint(project){let name=prompt('Endpoint name');if(!name)return;let slug=prompt('Endpoint slug',name.toLowerCase().replace(/[^a-z0-9]+/g,'-'));if(!slug)return;try{await api('/projects/'+project+'/endpoints',{method:'POST',body:JSON.stringify({name,slug})});load()}catch(e){alert(e.message)}}
 load()
 </script></html>""",user=current_user(),csrf=csrf_token())
+
+
+@app.get("/studio/endpoints/<endpoint_id>")
+def studio_endpoint(endpoint_id):
+    from flask import abort, redirect, url_for
+    user=current_user()
+    if not user:return redirect(url_for("auth.login"))
+    return render_template_string("""<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Endpoint Builder · AnyAPI</title>
+<style>body{background:#0b1019;color:#eaf1fa;font:15px system-ui;margin:0}header{border-bottom:1px solid #313b50;padding:18px 5vw;display:flex;align-items:center;gap:16px}main{max-width:1050px;margin:auto;padding:32px 20px}a{color:#8fdefb}h1{margin:12px 0}textarea,input,select{background:#121c2c;color:white;border:1px solid #41516b;border-radius:9px;padding:10px}textarea{box-sizing:border-box;width:100%;font:13px ui-monospace,monospace;min-height:210px}button{background:#a0e8fc;color:#101724;border:0;border-radius:8px;padding:11px 17px;cursor:pointer}button.secondary{background:#253449;color:white}nav{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}nav button.active{background:#a0e8fc;color:#111}section{border:1px solid #344158;border-radius:14px;padding:24px;background:#141d2b}label{display:block;margin-bottom:14px}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.hide{display:none}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#101622;padding:20px;border-radius:8px}small{color:#b2bfd0}</style>
+<header><a href="/dashboard">← Projects</a><strong>AnyAPI / Endpoint Builder</strong></header>
+<main><h1 id="title">Loading…</h1><p><small id="status"></small></p>
+<nav><button onclick="tab('overview')" id="b-overview">Overview</button><button onclick="tab('input')" id="b-input">Input</button><button onclick="tab('processor')" id="b-processor">Processor</button><button onclick="tab('output')" id="b-output">Output</button><button onclick="tab('test')" id="b-test">Test</button><button onclick="tab('logs')" id="b-logs">Logs</button></nav>
+<section id="overview"><label>Name <input id="name"></label><label>Description <input id="description"></label><div class="row"><label>HTTP method <select id="method"><option>POST</option><option>GET</option><option>PUT</option><option>PATCH</option><option>DELETE</option></select></label><label>Visibility <select id="visibility"><option>public</option><option>private</option></select></label></div></section>
+<section id="input" class="hide"><h2>Input JSON Schema</h2><p><small>JSON Schema editor. Visual drag-and-drop coming later.</small></p><textarea id="input_schema"></textarea></section>
+<section id="processor" class="hide"><h2>Processor</h2><p><small>Visual steps or code (isolated runner required for code).</small></p><textarea id="processor_code"></textarea></section>
+<section id="output" class="hide"><h2>Output JSON Schema</h2><textarea id="output_schema"></textarea></section>
+<section id="test" class="hide"><h2>Test draft</h2><textarea id="payload">{}</textarea><p><button onclick="test()">Run Test</button></p><pre id="test_result">No test executed</pre></section>
+<section id="logs" class="hide"><h2>Recent executions</h2><button onclick="logs()">Refresh</button><pre id="log_result">No logs loaded</pre></section>
+<div class="row" style="margin-top:20px"><button onclick="save()">Save draft</button><button class="secondary" onclick="publish()">Publish</button><button class="secondary" onclick="versions()">Versions</button><small id="message"></small></div><pre id="versions" class="hide"></pre>
+</main><script>
+const id={{ endpoint_id|tojson }},csrf={{ csrf|tojson }};
+const by=id=>document.getElementById(id);
+async function api(path,method='GET',data){let r=await fetch('/_api'+path,{method,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:data===undefined?undefined:JSON.stringify(data)});let j=await r.json();if(!r.ok)throw Error(JSON.stringify(j));return j;}
+function tab(n){for(const x of ['overview','input','processor','output','test','logs']){by(x).classList.toggle('hide',n!==x);by('b-'+x).classList.toggle('active',n===x)}}
+async function load(){try{let e=await api('/endpoints/'+id);by('title').textContent=e.name;by('status').textContent=e.method+' · '+e.status+' · '+e.slug;for(let k of ['name','description','method','visibility'])by(k).value=e[k]||'';for(let k of ['input_schema','output_schema'])by(k).value=JSON.stringify(e[k],null,2);by('processor_code').value=JSON.stringify(e.processor,null,2);tab('overview')}catch(err){by('message').textContent=err.message}}
+function values(){return {name:by('name').value,description:by('description').value,method:by('method').value,visibility:by('visibility').value,input_schema:JSON.parse(by('input_schema').value),output_schema:JSON.parse(by('output_schema').value),processor:JSON.parse(by('processor_code').value)}}
+async function save(){try{await api('/endpoints/'+id,'PATCH',values());by('message').textContent='Draft saved';await load()}catch(err){by('message').textContent=err.message}}
+async function publish(){try{await save();let v=await api('/endpoints/'+id+'/publish','POST',{});by('message').textContent='Published version '+v.version;await load()}catch(err){by('message').textContent=err.message}}
+async function test(){try{let res=await api('/endpoints/'+id+'/test','POST',JSON.parse(by('payload').value));by('test_result').textContent=JSON.stringify(res,null,2)}catch(err){by('test_result').textContent=err.message}}
+async function logs(){try{by('log_result').textContent=JSON.stringify(await api('/endpoints/'+id+'/executions'),null,2)}catch(err){by('log_result').textContent=err.message}}
+async function versions(){try{by('versions').classList.remove('hide');by('versions').textContent=JSON.stringify(await api('/endpoints/'+id+'/versions'),null,2)}catch(err){by('message').textContent=err.message}}
+load();
+</script></html>""",endpoint_id=endpoint_id,csrf=csrf_token())
 
 app.register_blueprint(gateway_bp)
