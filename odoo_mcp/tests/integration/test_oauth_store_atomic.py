@@ -80,3 +80,15 @@ def test_expired_code_rejected(db):
     with pytest.raises(OAuthError):
         store.consume_code(token,"https://client.example.org/client.json",
             "https://client.example.org/callback","https://mcp.example.org/mcp/"+"a"*40,VERIFIER)
+
+
+def test_missing_pkce_verifier_does_not_consume_code(db):
+    store, owner, foreign, server, other = db
+    client = "https://client.example.org/client.json"
+    redirect = "https://client.example.org/callback"
+    resource = "https://mcp.example.org/mcp/" + "a"*40
+    token = store.issue_code(owner, server, client, redirect, resource, ["odoo:read"], CHALLENGE)
+    with pytest.raises(OAuthError):
+        store.consume_code(token, client, redirect, resource)
+    # An attacker without the verifier must neither exchange nor burn the code.
+    assert store.consume_code(token, client, redirect, resource, VERIFIER)["server_id"] == server
