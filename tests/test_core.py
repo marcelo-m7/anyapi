@@ -122,7 +122,16 @@ def test_edge_pipeline_sequential_mapping(monkeypatch):
         {"id":"second","function":"anyapi-normalize","arguments":{"text":"{{steps.first.data.url}}"}}
     ],"output":"{{steps.second.data}}"}
     record={"input_schema":{"type":"object"},"output_schema":{"type":"object"}}
-    settings=SimpleNamespace(supabase_url="https://example.supabase.co",supabase_service_key="fixture-only")
+    settings=SimpleNamespace(supabase_url="https://example.supabase.co",supabase_service_key="fixture.test.signature")
     output=edge_pipeline.run_pipeline(processor,{"url":"video"}, {},{"anyapi-normalize":record},settings,time.monotonic()+10,lambda *args:None)
     assert seen[1][1]=={"text":"video"}
     assert output=={"text":"video","processed":True}
+
+def test_edge_pipeline_disallows_forward_and_self_references():
+    from anyapi.runtime.edge_pipeline import validate_pipeline
+    steps=[
+      {"id":"first","function":"anyapi-normalize","arguments":{"value":"{{steps.first.data}}"}},
+      {"id":"second","function":"anyapi-normalize","arguments":{"value":"{{steps.third.data}}"}}
+    ]
+    errors=validate_pipeline({"type":"edge_pipeline","steps":steps,"output":"{{steps.second.data}}"},{"anyapi-normalize":{}})
+    assert sum("unknown step" in e["message"] for e in errors)>=2
