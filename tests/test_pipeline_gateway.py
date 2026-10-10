@@ -76,3 +76,23 @@ def test_gateway_rate_limit_is_enforced(monkeypatch):
     with app.test_client() as client:
         response=client.post("/tester/project/endpoint",json={"url":"https://example.com"})
     assert response.status_code==429
+
+
+def test_magic_link_fragment_redirect_is_present():
+    from main import app
+    with app.test_client() as client:
+        response=client.get("/")
+    assert response.status_code == 200
+    assert b"/auth/callback" in response.data
+    assert b"location.hash" in response.data
+
+
+def test_legacy_processor_does_not_run_code_or_generic_http(monkeypatch):
+    from anyapi.runtime.engine import execute
+    from anyapi.runtime.code_runner import CodeRunner
+    config={"input_schema":{"type":"object"},"output_schema":{"type":"object"},"processor":{"type":"code","language":"python","code":"return {}"}}
+    result=execute(config,{}, {},connectors={},runner=CodeRunner("",""))
+    assert result.status_code == 503
+    config["processor"]={"type":"visual","steps":[{"type":"http","connector_id":"external","to":"output"}]}
+    result=execute(config,{}, {},connectors={},runner=CodeRunner("",""))
+    assert result.status_code == 503
