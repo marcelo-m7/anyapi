@@ -146,7 +146,7 @@ class OAuthStore:
                     """update odoo_mcp_private.odoo_mcp_oauth_tokens
                        set revoked_at=now()
                        where (access_hash=%s or refresh_hash=%s) and revoked_at is null
-                         and (%s is null or client_id=%s)""",
+                         and (%s::text is null or client_id=%s)""",
                     (_digest(raw_token), _digest(raw_token), client_id, client_id),
                 )
                 return cur.rowcount > 0
