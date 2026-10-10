@@ -146,3 +146,45 @@ class PinnedHttpsTransport:
             if response is not None:
                 response.release_conn()
             pool.close()
+
+    def get_metadata_json(self, url: str, timeout_s: int = 5) -> object:
+        """Fetch HTTPS Client ID metadata using a public-IP pinned TLS peer."""
+        if not isinstance(url, str) or len(url) > 1024:
+            raise NetworkError("Invalid client metadata URL")
+        parsed = urlsplit(url)
+        host = urlsplit(assert_safe_odoo_url(parsed.scheme + "://" + parsed.netloc)).hostname
+        if (not parsed.path.startswith("/") or parsed.path == "/" or
+                parsed.query or parsed.fragment or not 1 <= timeout_s <= 5):
+            raise NetworkError("Client metadata URL must have a path and no query")
+        peer = self._public_peer(host)
+        pool = self.pool_factory(peer, port=443, server_hostname=host,
+                                 assert_hostname=host, cert_reqs=ssl.CERT_REQUIRED,
+                                 maxsize=1, retries=False)
+        response = None
+        try:
+            response = pool.urlopen(
+                "GET", parsed.path, headers={"Host": host, "Accept": "application/json"},
+                redirect=False, retries=False,
+                timeout=urllib3.Timeout(total=timeout_s, connect=min(3, timeout_s),
+                                        read=timeout_s),
+                preload_content=False,
+            )
+            if response.status != 200:
+                raise NetworkError("Client metadata request failed")
+            if not response.headers.get("Content-Type", "").lower().startswith("application/json"):
+                raise NetworkError("Client metadata must be JSON")
+            if int(response.headers.get("Content-Length", "0")) > 32768:
+                raise NetworkError("Client metadata too large")
+            body = response.read(32769)
+            if len(body) > 32768:
+                raise NetworkError("Client metadata too large")
+            try:
+                return json.loads(body)
+            except ValueError as exc:
+                raise NetworkError("Invalid JSON in client metadata") from exc
+        except (urllib3.exceptions.TimeoutError, urllib3.exceptions.HTTPError) as exc:
+            raise NetworkError("Client metadata HTTPS request failed") from exc
+        finally:
+            if response is not None:
+                response.release_conn()
+            pool.close()
