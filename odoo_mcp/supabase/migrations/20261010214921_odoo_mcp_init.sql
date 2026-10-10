@@ -109,6 +109,8 @@ create table odoo_mcp_private.odoo_mcp_oauth_tokens (
  client_id text not null,
  access_hash text not null unique,
  refresh_hash text unique,
+ token_family_id uuid not null default gen_random_uuid(),
+ refresh_expires_at timestamptz,
  scopes text[] not null default '{}',
  resource text not null,
  issued_at timestamptz not null default now(),
@@ -169,4 +171,5 @@ create index odoo_mcp_policies_owner_server_idx on public.odoo_mcp_policies(owne
 create index odoo_mcp_audit_owner_date_idx on public.odoo_mcp_audit_events(owner_id, occurred_at desc);
 create index odoo_mcp_codes_owner_server_idx on odoo_mcp_private.odoo_mcp_oauth_codes(owner_id, server_id, expires_at);
 create index odoo_mcp_tokens_owner_server_idx on odoo_mcp_private.odoo_mcp_oauth_tokens(owner_id, server_id, expires_at);
+create index odoo_mcp_tokens_family_idx on odoo_mcp_private.odoo_mcp_oauth_tokens(token_family_id);
 create index odoo_mcp_tokens_expiry_idx on odoo_mcp_private.odoo_mcp_oauth_tokens(expires_at) where revoked_at is null;
