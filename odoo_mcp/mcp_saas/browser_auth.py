@@ -9,6 +9,7 @@ import secrets
 import time
 from dataclasses import dataclass
 from functools import wraps
+from urllib.parse import urlsplit
 
 import requests
 from cryptography.fernet import Fernet, InvalidToken
@@ -77,6 +78,19 @@ def _session_cipher() -> Fernet:
     if not key or len(key) < 24:
         raise ValueError("Session signing/encryption key is not configured")
     return Fernet(base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest()))
+
+
+def _safe_next(target: str | None) -> str:
+    if not target or len(target) > 2048:
+        return "/dashboard"
+    try:
+        parsed = urlsplit(target)
+        if (not target.startswith("/") or target.startswith("//") or "\\\\" in target
+                or parsed.scheme or parsed.netloc or parsed.fragment):
+            return "/dashboard"
+        return target
+    except ValueError:
+        return "/dashboard"
 
 
 def _csrf_token() -> str:
@@ -191,7 +205,7 @@ def login():
     try:
         data = _provider().sign_in(email, password)
         _store_auth(data)
-        return redirect("/dashboard")
+        return redirect(_safe_next(request.args.get("next")))
     except (requests.RequestException, ValueError, TypeError):
         return "Invalid credentials", 401
 
