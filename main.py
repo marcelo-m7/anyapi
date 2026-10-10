@@ -7,6 +7,9 @@ from anyapi.runtime.code_runner import CodeRunner
 from anyapi.auth import bp as auth_bp, csrf_token, current_user
 from anyapi.management import bp as management_bp
 from anyapi.gateway import bp as gateway_bp
+from anyapi.schema_editor import bp as schema_editor_bp
+from flask import send_from_directory
+from pathlib import Path
 
 settings = load_settings()
 app = Flask(__name__)
@@ -25,6 +28,11 @@ app.extensions["anyapi.runner"] = CodeRunner(settings.runner_url, settings.runne
 app.jinja_env.globals["csrf_token"] = csrf_token
 app.register_blueprint(auth_bp)
 app.register_blueprint(management_bp)
+app.register_blueprint(schema_editor_bp)
+
+@app.get("/assets/<path:filename>")
+def assets(filename):
+    return send_from_directory(Path(__file__).parent / "public", filename)
 
 @app.get("/")
 def landing():
@@ -80,13 +88,13 @@ const by=id=>document.getElementById(id);
 async function api(path,method='GET',data){let r=await fetch('/_api'+path,{method,headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:data===undefined?undefined:JSON.stringify(data)});let j=await r.json();if(!r.ok)throw Error(JSON.stringify(j));return j;}
 function tab(n){for(const x of ['overview','input','processor','output','test','logs']){by(x).classList.toggle('hide',n!==x);by('b-'+x).classList.toggle('active',n===x)}}
 async function load(){try{let e=await api('/endpoints/'+id);by('title').textContent=e.name;by('status').textContent=e.method+' · '+e.status+' · '+e.slug;for(let k of ['name','description','method','visibility'])by(k).value=e[k]||'';for(let k of ['input_schema','output_schema'])by(k).value=JSON.stringify(e[k],null,2);by('processor_code').value=JSON.stringify(e.processor,null,2);tab('overview')}catch(err){by('message').textContent=err.message}}
-function values(){return {name:by('name').value,description:by('description').value,method:by('method').value,visibility:by('visibility').value,input_schema:JSON.parse(by('input_schema').value),output_schema:JSON.parse(by('output_schema').value),processor:JSON.parse(by('processor_code').value)}}
-async function save(){try{await api('/endpoints/'+id,'PATCH',values());by('message').textContent='Draft saved';await load()}catch(err){by('message').textContent=err.message}}
+async function values(){let ins=await api('/schema/convert','POST',{format:by('input_schema').value.trim().startsWith('{')?'json':'yaml',text:by('input_schema').value});let outs=await api('/schema/convert','POST',{format:by('output_schema').value.trim().startsWith('{')?'json':'yaml',text:by('output_schema').value});return {name:by('name').value,description:by('description').value,method:by('method').value,visibility:by('visibility').value,input_schema:ins.schema,output_schema:outs.schema,processor:JSON.parse(by('processor_code').value)}}
+async function save(){try{await api('/endpoints/'+id,'PATCH',await values());by('message').textContent='Draft saved';await load()}catch(err){by('message').textContent=err.message}}
 async function publish(){try{await save();let v=await api('/endpoints/'+id+'/publish','POST',{});by('message').textContent='Published version '+v.version;await load()}catch(err){by('message').textContent=err.message}}
 async function test(){try{let res=await api('/endpoints/'+id+'/test','POST',JSON.parse(by('payload').value));by('test_result').textContent=JSON.stringify(res,null,2)}catch(err){by('test_result').textContent=err.message}}
 async function logs(){try{by('log_result').textContent=JSON.stringify(await api('/endpoints/'+id+'/executions'),null,2)}catch(err){by('log_result').textContent=err.message}}
 async function versions(){try{by('versions').classList.remove('hide');by('versions').textContent=JSON.stringify(await api('/endpoints/'+id+'/versions'),null,2)}catch(err){by('message').textContent=err.message}}
 load();
-</script></html>""",endpoint_id=endpoint_id,csrf=csrf_token())
+</script><script src="/assets/schema-builder.js"></script></html>""",endpoint_id=endpoint_id,csrf=csrf_token())
 
 app.register_blueprint(gateway_bp)
