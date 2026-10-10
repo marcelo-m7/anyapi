@@ -69,8 +69,9 @@ def validate_config(config: dict[str, Any], connector_ids: set[str], runner: Cod
     if kind == "edge_pipeline":
         problems.extend(edge_pipeline.validate_pipeline(processor, connector_ids))
     elif kind == "visual":
-        problems.extend(declarative.validate_steps(processor.get("steps"), connector_ids))
+        problems.append({"path":"processor.type","message":"Legacy visual processors cannot be newly published; use Edge Function pipeline"})
     elif kind == "code":
+        problems.append({"path":"processor.type","message":"Code processors are not available in V1"})
         if processor.get("language") not in ("python", "javascript"):
             problems.append({"path": "processor.language", "message": "Choose python or javascript"})
         if not str(processor.get("code") or "").strip():
@@ -137,6 +138,7 @@ def execute(
                 catalog={row["slug"]:row for row in records}
             output=edge_pipeline.run_pipeline(processor,input_data,context,catalog,load_settings(),deadline,log)
         elif processor.get("type") == "code":
+            raise RunnerUnavailable("Code processors are disabled in AnyAPI V1")
             result = runner.run(processor.get("language", ""), processor.get("code", ""), input_data, context, timeout_ms)
             logs.extend(result.logs)
             output = result.output
