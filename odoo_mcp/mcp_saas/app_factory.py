@@ -33,6 +33,17 @@ def create_app(settings: Settings | None = None, dependencies: dict | None = Non
         dependencies.get("context_factory") if dependencies is not None else None)
     app.register_blueprint(mcp_bp)
     app.register_blueprint(oauth_bp)
+    if dependencies is not None and "oauth_service" in dependencies:
+        app.extensions["odoo_mcp.oauth_service"] = dependencies["oauth_service"]
+    elif config.db_dsn.startswith(("postgresql://", "postgres://")) and config.public_url.startswith("https://"):
+        # Instantiate the service without connecting during Flask import.
+        from .oauth_store import OAuthStore
+        from .oauth import AuthorizationService, ClientMetadataResolver
+        app.extensions["odoo_mcp.oauth_service"] = AuthorizationService(
+            OAuthStore(config.db_dsn), ClientMetadataResolver(), config.public_url)
+    else:
+        app.extensions["odoo_mcp.oauth_service"] = None
+
 
     @app.get("/health")
     def health():
