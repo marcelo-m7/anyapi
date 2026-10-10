@@ -12,10 +12,7 @@ from uuid import UUID
 
 import psycopg
 from psycopg.rows import dict_row
-
-
-class OAuthError(Exception):
-    """Generic OAuth grant rejection; never expose presence of other tenants."""
+from .errors import OAuthError
 
 
 def _uuid(value: str) -> str:
