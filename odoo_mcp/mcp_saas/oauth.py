@@ -187,10 +187,7 @@ class AuthorizationService:
         return self.store.issue_tokens(grant)
 
     def authenticate_access_token(self, token: str, resource: str) -> dict:
-        try:
-            return self.store.authenticate_access_token(token, resource)
-        except OAuthError as exc:
-            raise AppError("not_authorized", 401, "Unauthorized MCP request") from exc
+        return self.store.authenticate_access_token(token, resource)
 
 def _service() -> AuthorizationService:
     provider = current_app.extensions.get("odoo_mcp.oauth_service")
