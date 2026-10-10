@@ -16,7 +16,7 @@ def resolve(username, project, endpoint):
     return data
 
 def authorize(data):
-    if data.get("visibility") != "private":
+    if (data.get("config") or {}).get("visibility", "private") != "private":
         return True
     supplied = request.headers.get("Authorization", "")
     if not supplied.startswith("Bearer aapi_"):
