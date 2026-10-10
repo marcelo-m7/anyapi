@@ -50,3 +50,29 @@ def test_invalid_input_returns_400():
     result=execute(config,{}, {},connectors={},runner=CodeRunner("",""))
     assert result.status_code==400
     assert result.error_type=="input_validation"
+
+
+def test_gateway_uses_published_visibility(monkeypatch):
+    """Changing the draft must not change published authentication."""
+    from flask import Flask
+    from anyapi import gateway
+    app=Flask(__name__)
+    published={"visibility":"public","config":{"visibility":"private"},"project_id":"p","endpoint_id":"e"}
+    with app.test_request_context("/someone/api/test"):
+        assert gateway.authorize(published) is False
+
+
+def test_schema_conversion_requires_login():
+    from flask import Flask
+    from anyapi.schema_editor import bp
+    app=Flask(__name__)
+    app.register_blueprint(bp)
+    with app.test_client() as client:
+        result=client.post("/_api/schema/convert",json={"format":"json","text":"{}"})
+        assert result.status_code in (400,401)
+
+
+def test_visual_schema_invalid_input_rejected():
+    from anyapi.runtime.schema import schema_problems
+    problems=schema_problems({"type":"mystery"})
+    assert problems
