@@ -10,7 +10,7 @@ from .code_runner import RunnerError
 
 SLUG=re.compile(r"^[a-z][a-z0-9-]{1,62}$")
 MAX_STEPS=8
-STEP_REF=re.compile(r"\\{\\{\\s*steps\\.([a-z][a-z0-9_]*)\\.")
+STEP_REF=re.compile(r"\{\{\s*steps\.([a-z][a-z0-9_]*)\.")
 
 def _step_refs(value):
     if isinstance(value,str): return set(STEP_REF.findall(value))
