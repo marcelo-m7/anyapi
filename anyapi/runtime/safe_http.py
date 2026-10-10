@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
 import socket
 import time
 from dataclasses import dataclass
@@ -94,6 +95,8 @@ def request(
     json_body: Any = None,
     timeout_s: float = 8.0,
 ) -> HttpResult:
+    if os.environ.get("ANYAPI_HTTP_EGRESS_ENABLED", "").lower() != "true":
+        raise EgressBlocked("HTTP connectors require an explicitly configured protected egress environment")
     started = time.monotonic()
     deadline = started + timeout_s
     current_url, current_method, body = url, method.upper(), json_body
