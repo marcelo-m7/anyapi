@@ -41,6 +41,7 @@ def create_app(settings: Settings | None = None, dependencies: dict | None = Non
           and find_spec("authlib") is not None):
         # Never require dedicated OAuth dependencies in the original AnyAPI CI.
         from .oauth_store import OAuthStore
+from .context_resolver import ContextResolver
         oauth_store = OAuthStore(config.db_dsn)
     else:
         oauth_store = None
@@ -51,6 +52,12 @@ def create_app(settings: Settings | None = None, dependencies: dict | None = Non
         if oauth_store is not None and config.public_url.startswith("https://") else None
     )
     app.register_blueprint(oauth_bp)
+    if all(config.readiness().values()) and app.extensions["odoo_mcp.oauth_service"] is not None:
+        if app.extensions["odoo_mcp.authorizer"] is None:
+            app.extensions["odoo_mcp.authorizer"] = app.extensions["odoo_mcp.oauth_service"]
+        if app.extensions["odoo_mcp.context_factory"] is None:
+            resolver = ContextResolver(config.db_dsn, config.encryption_key)
+            app.extensions["odoo_mcp.context_factory"] = resolver.resolve
     @app.get("/health")
     def health():
         return jsonify(status="ok", service="odoo-mcp-saas")
