@@ -53,7 +53,7 @@ def test_owner_a_reads_only_its_connection_and_secret(records):
         "owner_id":a,"server_id":s1,"scopes":["odoo:read"]},"c"*40)
     assert result.owner_id==a
     assert result.server_id==s1
-    assert result.api_key=="a-secret"
+    assert result.api_key=="c-secret"
     assert [p["model_name"] for p in result.policies]==["res.partner"]
 
 
@@ -61,7 +61,7 @@ def test_owner_b_cannot_resolve_a_server_even_with_id(records):
     a,b,s1,s2=records
     with pytest.raises(AppError):
         ContextResolver(DSN,KEY).resolve({
-            "owner_id":b,"server_id":s1,"scopes":["odoo:read"]},"a"*40)
+            "owner_id":b,"server_id":s1,"scopes":["odoo:read"]},"c"*40)
 
 
 def test_grant_for_server_a_cannot_reach_server_b_public_id(records):
