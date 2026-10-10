@@ -17,7 +17,7 @@ app.secret_key = settings.secret_key
 app.config["ANYAPI_SETTINGS"] = settings
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SECURE=settings.is_production,
+    SESSION_COOKIE_SECURE=bool(__import__("os").environ.get("VERCEL_ENV")),
     SESSION_COOKIE_SAMESITE="Lax",
     MAX_CONTENT_LENGTH=settings.max_payload_bytes,
     ANYAPI_PUBLIC_URL=settings.public_base_url,
@@ -51,6 +51,21 @@ if (location.hash && new URLSearchParams(location.hash.slice(1)).has('access_tok
 @app.get("/health")
 def health():
     return jsonify(status="ok", service="anyapi")
+
+@app.get("/health/ready")
+def readiness():
+    import os
+    failures = []
+    if not settings.supabase_configured:
+        failures.append("supabase_unconfigured")
+    if not (os.environ.get("ANYAPI_SECRET_KEY") or os.environ.get("FLASK_SECRET_KEY")):
+        failures.append("session_key_unconfigured")
+    if not settings.encryption_key_material:
+        failures.append("encryption_key_unconfigured")
+    edge_jwt=os.environ.get("ANYAPI_EDGE_FUNCTION_JWT") or settings.supabase_service_key
+    if not edge_jwt or edge_jwt.count(".") != 2:
+        failures.append("edge_function_jwt_unconfigured")
+    return jsonify(ready=not failures, checks=failures), 503 if failures else 200
 
 @app.get("/dashboard")
 def dashboard():
