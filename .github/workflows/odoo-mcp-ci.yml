@@ -1,0 +1,32 @@
+name: Odoo MCP isolated tests
+on:
+  push:
+    branches:
+      - feat/odoo-mcp-saas
+  pull_request:
+    paths:
+      - 'odoo_mcp/**'
+      - '.github/workflows/odoo-mcp-ci.yml'
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+      - name: Generate pinned lock file (review artifact)
+        run: |
+          cd odoo_mcp
+          uv lock
+          echo BEGIN_ODOO_MCP_UV_LOCK
+          cat uv.lock
+          echo END_ODOO_MCP_UV_LOCK
+      - name: Install and execute Odoo MCP TDD suite
+        run: |
+          cd odoo_mcp
+          uv sync --extra test --locked
+          uv run --locked pytest -q
+      - name: Verify existing AnyAPI regression suite
+        run: |
+          uv run --with pytest --with flask --with requests --with jsonschema --with pyyaml --with cryptography pytest -q tests
