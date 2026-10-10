@@ -4,6 +4,7 @@ from __future__ import annotations
 from flask import Flask, jsonify
 from .settings import Settings
 from .browser_auth import bp as auth_bp, SupabaseAuthProvider
+from .mcp_http import bp as mcp_bp
 
 
 def create_app(settings: Settings | None = None, dependencies: dict | None = None) -> Flask:
@@ -25,6 +26,11 @@ def create_app(settings: Settings | None = None, dependencies: dict | None = Non
               if config.supabase_url.startswith("https://") else None)
     )
     app.register_blueprint(auth_bp)
+    app.extensions["odoo_mcp.authorizer"] = (
+        dependencies.get("authorizer") if dependencies is not None else None)
+    app.extensions["odoo_mcp.context_factory"] = (
+        dependencies.get("context_factory") if dependencies is not None else None)
+    app.register_blueprint(mcp_bp)
 
     @app.get("/health")
     def health():
