@@ -131,7 +131,12 @@ def execute(
         if processor.get("type") == "edge_pipeline":
             from anyapi.services import supabase
             from anyapi.config import load_settings
-            names={s["function"] for s in processor.get("steps",[]) if isinstance(s,dict) and isinstance(s.get("function"),str)}
+            steps=processor.get("steps",[])
+            if not isinstance(steps,list) or not 1<=len(steps)<=edge_pipeline.MAX_STEPS:
+                raise RunnerError("Invalid pipeline step count","invalid_processor")
+            names={s["function"] for s in steps if isinstance(s,dict) and isinstance(s.get("function"),str)}
+            if len(names)>edge_pipeline.MAX_STEPS or any(not edge_pipeline.SLUG.fullmatch(s) for s in names):
+                raise RunnerError("Invalid Edge Function identifiers","invalid_processor")
             catalog={}
             if names:
                 records=supabase().service().select("edge_function_catalog",{"select":"slug,input_schema,output_schema","enabled":"eq.true","slug":"in.("+",".join(sorted(names))+")"})
