@@ -39,6 +39,11 @@ def landing():
     return render_template_string("""<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>AnyAPI — Build APIs in minutes</title>
 <style>body{background:#0b0d13;color:#f5f7fc;font:16px system-ui;margin:0}main{max-width:950px;margin:10vh auto;padding:30px}h1{font-size:clamp(3rem,9vw,6rem);letter-spacing:-.07em;margin-bottom:0}p{color:#abb3c5;font-size:1.25rem}a{color:#8dd9ff}nav{display:flex;justify-content:space-between}code{color:#88f3c1}section{background:#171b25;border:1px solid #31394a;border-radius:18px;padding:25px;margin-top:30px}</style>
+<script>
+if (location.hash && new URLSearchParams(location.hash.slice(1)).has('access_token')) {
+  location.replace('/auth/callback' + location.hash);
+}
+</script>
 <main><nav><strong>AnyAPI</strong><a href="/login">Sign in</a></nav>
 <h1>Build APIs in minutes.</h1><p>Connect. Process. Publish. No infrastructure required.</p>
 <a href="/signup">Start building →</a><section><code>POST https://anyapi.tech/username/project/endpoint</code><p>Define input and output schemas, add processing steps, test and publish.</p></section></main></html>""")
