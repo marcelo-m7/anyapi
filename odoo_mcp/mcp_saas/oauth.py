@@ -6,8 +6,7 @@ from urllib.parse import urlsplit
 
 from flask import Blueprint, current_app, jsonify
 
-from .errors import AppError
-from .oauth_store import OAuthError
+from .errors import AppError, OAuthError
 from .network import NetworkError, PinnedHttpsTransport, assert_safe_odoo_url
 
 bp = Blueprint("odoo_mcp_oauth", __name__)
