@@ -8,6 +8,17 @@ from anyapi.supabase import SupabaseError
 
 bp = Blueprint("management", __name__, url_prefix="/_api")
 
+def catalog_ids(db):
+    return {row["slug"] for row in db.select("edge_function_catalog",{"select":"slug","enabled":"eq.true"})}
+
+@bp.get("/edge-functions")
+def available_edge_functions():
+    u,db=user_client()
+    if not u:return error("unauthorized",401)
+    rows=supabase().service().select("edge_function_catalog",{"select":"slug,title,description,category,input_schema,output_schema","enabled":"eq.true","order":"category.asc,title.asc"})
+    return jsonify(rows)
+
+
 def user_client():
     u = current_user()
     if not u:
@@ -60,7 +71,7 @@ def create_endpoint(project_id):
     name=str(data.get("name","")).strip()[:80]
     if not name:return error("Endpoint name is required")
     try:
-        return jsonify(db.insert("endpoints",{"project_id":project_id,"owner_id":u["id"],"name":name,"slug":slug,"method":data.get("method","POST")})),201
+        return jsonify(db.insert("endpoints",{"project_id":project_id,"owner_id":u["id"],"name":name,"slug":slug,"method":data.get("method","POST"),"processor":{"type":"edge_pipeline","steps":[],"output":""}})),201
     except SupabaseError as exc:return error(exc.message,409 if exc.status==409 else 400)
 
 @bp.route("/endpoints/<endpoint_id>",methods=["GET","PATCH"])
@@ -91,7 +102,8 @@ def publish(endpoint_id):
     if not endpoint:return error("not_found",404)
     ids=referenced_connector_ids(endpoint.get("processor"))
     available=db.select("connectors",{"project_id":"eq."+endpoint["project_id"],"owner_id":"eq."+u["id"],"select":"id"})
-    failures=validate_config(snapshot_config(endpoint),{str(c["id"]) for c in available},runner())
+    valid_ids=catalog_ids(supabase().service()) if (endpoint.get("processor") or {}).get("type")=="edge_pipeline" else {str(c["id"]) for c in available}
+    failures=validate_config(snapshot_config(endpoint),valid_ids,runner())
     if failures:return jsonify(error="validation_failed",fields=failures),422
     try:
         version=db.rpc("publish_endpoint",{"p_endpoint_id":endpoint_id,"p_config":snapshot_config(endpoint),"p_notes":(request.get_json(silent=True) or {}).get("notes")})
@@ -105,7 +117,7 @@ def rollback(endpoint_id):
     if not u:return error("unauthorized",401)
     data=request.get_json(silent=True) or {}
     try:
-        return jsonify(db.rpc("rollback_endpoint",{"p_endpoint_id":endpoint_id,"p_version":int(data["version"])}))
+        return jsonify(db.rpc("rollback_endpoint",{"p_endpoint_id":endpoint_id,"p_version_id":str(data["version_id"])}))
     except (SupabaseError,ValueError,KeyError) as exc:return error(str(exc))
 
 @bp.post("/endpoints/<endpoint_id>/test")
@@ -120,7 +132,8 @@ def test_endpoint(endpoint_id):
     config=snapshot_config(endpoint)
     attached=referenced_connector_ids(config.get("processor"))
     available=db.select("connectors",{"project_id":"eq."+endpoint["project_id"],"owner_id":"eq."+u["id"],"select":"id"})
-    problems=validate_config(config,{str(row["id"]) for row in available},runner())
+    valid_ids=catalog_ids(supabase().service()) if (config.get("processor") or {}).get("type")=="edge_pipeline" else {str(row["id"]) for row in available}
+    problems=validate_config(config,valid_ids,runner())
     if problems:return jsonify(error="validation_failed",fields=problems),422
     body=request.get_json(silent=True)
     if body is None:return error("JSON body required")
@@ -150,3 +163,36 @@ def executions(endpoint_id):
     endpoint=db.select_one("endpoints",{"id":"eq."+endpoint_id,"owner_id":"eq."+u["id"],"select":"id"})
     if not endpoint:return error("not_found",404)
     return jsonify(db.select("executions",{"endpoint_id":"eq."+endpoint_id,"owner_id":"eq."+u["id"],"select":"id,created_at,status_code,duration_ms,success,error_type,source","order":"created_at.desc","limit":"50"}))
+
+@bp.route("/projects/<project_id>/api-keys", methods=["GET","POST"])
+def project_api_keys(project_id):
+    if request.method=="POST":verify_csrf()
+    u,db=user_client()
+    if not u:return error("unauthorized",401)
+    project=db.select_one("projects",{"id":"eq."+project_id,"owner_id":"eq."+u["id"],"select":"id"})
+    if not project:return error("not_found",404)
+    if request.method=="GET":
+        return jsonify(db.select("api_keys",{"project_id":"eq."+project_id,"owner_id":"eq."+u["id"],"select":"id,name,prefix,endpoint_id,created_at,revoked_at"}))
+    from anyapi.security import generate_api_key
+    values=request.get_json(silent=True) or {}
+    name=str(values.get("name") or "").strip()
+    if not name or len(name)>80:return error("Invalid key name")
+    endpoint_id=values.get("endpoint_id")
+    if endpoint_id:
+        record=db.select_one("endpoints",{"id":"eq."+str(endpoint_id),"project_id":"eq."+project_id,"owner_id":"eq."+u["id"],"select":"id"})
+        if not record:return error("Endpoint not found",404)
+    plain,prefix,digest=generate_api_key()
+    try:
+        created=db.insert("api_keys",{"project_id":project_id,"owner_id":u["id"],"endpoint_id":endpoint_id,"name":name,"prefix":prefix,"key_hash":digest},select="id,name,prefix,endpoint_id,created_at")
+        return jsonify({**created,"key":plain,"warning":"Copy this key now. It will not be shown again."}),201
+    except SupabaseError:return error("Could not create API key")
+
+@bp.post("/api-keys/<key_id>/revoke")
+def revoke_api_key(key_id):
+    verify_csrf()
+    u,db=user_client()
+    if not u:return error("unauthorized",401)
+    original=db.select_one("api_keys",{"id":"eq."+key_id,"owner_id":"eq."+u["id"],"select":"id"})
+    if not original:return error("not_found",404)
+    rows=db.update("api_keys",{"id":"eq."+key_id,"owner_id":"eq."+u["id"]},{"revoked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()},"id,revoked_at")
+    return jsonify(rows[0] if rows else {"revoked":True})

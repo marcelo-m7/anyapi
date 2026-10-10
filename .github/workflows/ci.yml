@@ -1,8 +1,13 @@
 name: AnyAPI CI
 on:
   push:
-    branches: [main, 'v0/**']
+    branches: [main]
   pull_request:
+
+concurrency:
+  group: anyapi-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
@@ -13,7 +18,10 @@ jobs:
           python-version: '3.12'
       - name: Install
         run: pip install -e '.[test]'
-      - name: Compile
+      - name: Python compile
         run: python -m compileall -q main.py anyapi endpoints
-      - name: Unit tests
+      - name: Browser JS syntax
+        run: |
+          for file in public/*.js; do node --check "$file"; done
+      - name: Tests
         run: pytest -q

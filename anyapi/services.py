@@ -127,7 +127,7 @@ def log_execution(
 def consume_rate_limit(key: str, limit: int, window_seconds: int = 60) -> tuple[bool, int, int]:
     """Fixed-window limiter stored in Postgres so it works across serverless instances.
 
-    Returns (allowed, remaining, reset_epoch). Fails open if the database is unreachable.
+    Returns (allowed, remaining, reset_epoch). Fails closed if the database is unreachable.
     """
     try:
         rows = supabase().service().rpc(
@@ -141,4 +141,4 @@ def consume_rate_limit(key: str, limit: int, window_seconds: int = 60) -> tuple[
         return bool(row.get("allowed", True)), int(row.get("remaining", limit)), reset
     except SupabaseError as exc:
         current_app.logger.warning("rate limiter unavailable: %s", exc.message)
-        return True, limit, int(time.time()) + window_seconds
+        return False, 0, int(time.time()) + window_seconds

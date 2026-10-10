@@ -76,3 +76,12 @@ All state-mutating management requests require a logged-in session and an `X-CSR
 3. Replace the JSON-only editor with a visual schema builder and drag-and-drop processor.
 4. Add secure CRUD/configuration for HTTP connectors and API keys.
 5. Configure isolated runner and full regression tests.
+
+
+## Security update (MVP completion branch)
+
+- Supabase migration `0003_anyapi_security_indexes.sql` has been applied to project `aiosqtyvzopdtsolkpfg` and adds FK indexes and revokes direct RPC invocation of internal trigger functions.
+- HTTP connector configuration is normalized to `base_url`.
+- Outbound HTTP requests are **disabled by default** until an independently protected egress network is deployed. Set `ANYAPI_HTTP_EGRESS_ENABLED=true` only behind a network firewall/egress proxy that prevents connections to private, local, and cloud metadata addresses even during DNS rebinding. The application-level DNS check alone is insufficient.
+- The Python/JavaScript runner remains optional and disabled if no isolated worker is configured.
+- Database-backed multi-user tests and browser E2E remain release blockers.
