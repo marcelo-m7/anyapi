@@ -1,0 +1,43 @@
+name: Odoo MCP isolated tests
+on:
+  push:
+    branches:
+      - feat/odoo-mcp-saas
+  pull_request:
+    paths:
+      - 'odoo_mcp/**'
+      - '.github/workflows/odoo-mcp-ci.yml'
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: odoo_mcp_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_ephemeral_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d odoo_mcp_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ODOO_MCP_TEST_DB_DSN: postgresql://postgres:ci_ephemeral_only@localhost:5432/odoo_mcp_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+      - name: Validate committed lockfile
+        run: cd odoo_mcp && uv lock --check
+      - name: Install and execute Odoo MCP TDD suite
+        run: |
+          cd odoo_mcp
+          uv sync --extra test --locked
+          uv run --locked pytest -q
+      - name: Verify existing AnyAPI regression suite
+        run: |
+          uv run --with pytest --with flask --with requests --with jsonschema --with pyyaml --with cryptography pytest -q tests
