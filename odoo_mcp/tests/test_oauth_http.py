@@ -1,5 +1,7 @@
 """OAuth HTTP boundaries: explicit consent, PKCE exchange, redirect and CSRF."""
 import re
+import pytest
+pytest.importorskip("authlib")  # Required only in independently installed Odoo MCP runtime
 from urllib.parse import urlencode
 from uuid import uuid4
 
