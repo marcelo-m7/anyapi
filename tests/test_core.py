@@ -136,3 +136,20 @@ def test_edge_pipeline_disallows_forward_and_self_references():
     ]
     errors=validate_pipeline({"type":"edge_pipeline","steps":steps,"output":"{{steps.second.data}}"},{"anyapi-normalize":{}})
     assert sum("unknown step" in e["message"] for e in errors)>=2
+
+
+def test_edge_pipeline_refuses_non_https_supabase(monkeypatch):
+    import time
+    from types import SimpleNamespace
+    from anyapi.runtime.edge_pipeline import run_pipeline
+    from anyapi.runtime.code_runner import RunnerError
+    from anyapi.runtime import edge_pipeline
+    monkeypatch.setenv("ANYAPI_EDGE_FUNCTION_JWT","fixture.jwt.signature")
+    monkeypatch.setattr(edge_pipeline.requests,"post",lambda *args,**kwargs: (_ for _ in ()).throw(AssertionError("No outbound HTTP expected")))
+    with pytest.raises(RunnerError,match="HTTPS"):
+        run_pipeline(
+            {"type":"edge_pipeline","steps":[{"id":"first","function":"anyapi-normalize","arguments":{"value":"hello"}}]},
+            {},{},{"anyapi-normalize":{"input_schema":{"type":"object"},"output_schema":{"type":"object"}}},
+            SimpleNamespace(supabase_url="http://bad.example",supabase_service_key="fixture.jwt.signature"),
+            time.monotonic()+2,lambda *args:None
+        )
