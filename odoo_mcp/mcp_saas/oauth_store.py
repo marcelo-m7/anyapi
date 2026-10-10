@@ -82,7 +82,8 @@ class OAuthStore:
                     )
                 if not row:
                     raise OAuthError("invalid_grant")
-                return dict(row)
+                return {**dict(row), "owner_id": str(row["owner_id"]),
+                        "server_id": str(row["server_id"])}
 
     @staticmethod
     def hash_token(value: str) -> str:
