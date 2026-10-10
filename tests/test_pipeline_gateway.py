@@ -96,3 +96,13 @@ def test_legacy_processor_does_not_run_code_or_generic_http(monkeypatch):
     config["processor"]={"type":"visual","steps":[{"type":"http","connector_id":"external","to":"output"}]}
     result=execute(config,{}, {},connectors={},runner=CodeRunner("",""))
     assert result.status_code == 503
+
+
+def test_readiness_reports_missing_configuration_without_secrets():
+    from main import app
+    with app.test_client() as client:
+        response=client.get("/health/ready")
+    assert response.status_code in (200,503)
+    assert isinstance(response.json["checks"], list)
+    assert "ready" in response.json
+    assert "service_role" not in response.get_data(as_text=True).lower()
