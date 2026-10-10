@@ -11,6 +11,7 @@ from anyapi.gateway import bp as gateway_bp
 settings = load_settings()
 app = Flask(__name__)
 app.secret_key = settings.secret_key
+app.config["ANYAPI_SETTINGS"] = settings
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SECURE=settings.is_production,
