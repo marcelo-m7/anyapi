@@ -8,6 +8,9 @@ import pytest
 
 psycopg = pytest.importorskip("psycopg")
 from mcp_saas.oauth_store import OAuthStore, OAuthError
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
+VERIFIER = 'v'*48
+CHALLENGE = create_s256_code_challenge(VERIFIER)
 
 DSN = os.environ.get("ODOO_MCP_TEST_DB_DSN")
 if not DSN:
@@ -47,11 +50,11 @@ def test_duplicate_code_consumption_1_of_2_only(db):
     store, owner, foreign, server, other = db
     secret = store.issue_code(owner,server,"https://client.example.org/client.json",
         "https://client.example.org/callback","https://mcp.example.org/mcp/"+"a"*40,
-        ["odoo:read"],"h"*43)
+        ["odoo:read"],CHALLENGE)
     def consume():
         try:
             return store.consume_code(secret, "https://client.example.org/client.json",
-                   "https://client.example.org/callback","https://mcp.example.org/mcp/"+"a"*40)
+                   "https://client.example.org/callback","https://mcp.example.org/mcp/"+"a"*40,VERIFIER)
         except OAuthError:
             return None
     with ThreadPoolExecutor(max_workers=2) as ex:
@@ -63,17 +66,17 @@ def test_cross_server_grant_cannot_resolve(db):
     store, owner, foreign, server, other = db
     token = store.issue_code(owner,server,"https://client.example.org/client.json",
         "https://client.example.org/callback","https://mcp.example.org/mcp/"+"a"*40,
-        ["odoo:read"],"h"*43)
+        ["odoo:read"],CHALLENGE)
     with pytest.raises(OAuthError):
         store.consume_code(token, "https://client.example.org/client.json",
-           "https://client.example.org/callback","https://mcp.example.org/mcp/"+"b"*40)
+           "https://client.example.org/callback","https://mcp.example.org/mcp/"+"b"*40,VERIFIER)
 
 
 def test_expired_code_rejected(db):
     store, owner, foreign, server, other = db
     token = store.issue_code(owner, server, "https://client.example.org/client.json",
            "https://client.example.org/callback", "https://mcp.example.org/mcp/"+"a"*40,
-           ["odoo:read"],"h"*43, ttl_seconds=-1)
+           ["odoo:read"],CHALLENGE, ttl_seconds=-1)
     with pytest.raises(OAuthError):
         store.consume_code(token,"https://client.example.org/client.json",
-            "https://client.example.org/callback","https://mcp.example.org/mcp/"+"a"*40)
+            "https://client.example.org/callback","https://mcp.example.org/mcp/"+"a"*40,VERIFIER)
