@@ -1,0 +1,19 @@
+name: AnyAPI CI
+on:
+  push:
+    branches: [main, 'v0/**']
+  pull_request:
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: pip install -e '.[test]'
+      - name: Compile
+        run: python -m compileall -q main.py anyapi endpoints
+      - name: Unit tests
+        run: pytest -q
