@@ -60,7 +60,12 @@ def run_pipeline(processor,input_data,context,catalog,settings,deadline,log):
         args=render_template(step["arguments"],state)
         invalid=validate(args,record["input_schema"])
         if invalid: raise RunnerError(f"Arguments for step {position+1} violate schema","input_validation")
-        remaining=max(0.1,min(deadline-time.monotonic(),8.0))
+        remaining=deadline-time.monotonic()
+        if remaining <= 0:
+            raise RunnerError("Pipeline execution timed out","timeout")
+        remaining=min(remaining,8.0)
+        if not settings.supabase_url.startswith("https://"):
+            raise RunnerError("Supabase HTTPS URL is required","runtime_unavailable")
         endpoint=f"{settings.supabase_url}/functions/v1/{slug}"
         api_key=settings.supabase_service_key
         key=os.getenv("ANYAPI_EDGE_FUNCTION_JWT") or api_key
