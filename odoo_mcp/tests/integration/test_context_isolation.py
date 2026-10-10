@@ -75,7 +75,7 @@ def test_denies_missing_oauth_read_scope(records):
     a,b,s1,s2=records
     with pytest.raises(AppError):
         ContextResolver(DSN,KEY).resolve({
-            "owner_id":a,"server_id":s1,"scopes":[]},"a"*40)
+            "owner_id":a,"server_id":s1,"scopes":[]},"c"*40)
 
 
 def test_policy_disable_is_effective_next_resolution(records):
@@ -84,7 +84,7 @@ def test_policy_disable_is_effective_next_resolution(records):
         db.execute("update public.odoo_mcp_policies set enabled=false where server_id=%s",(s1,))
     try:
         resolved=ContextResolver(DSN,KEY).resolve({
-            "owner_id":a,"server_id":s1,"scopes":["odoo:read"]},"a"*40)
+            "owner_id":a,"server_id":s1,"scopes":["odoo:read"]},"c"*40)
         assert resolved.policies==[]
     finally:
         with psycopg.connect(DSN) as db:
