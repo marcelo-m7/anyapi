@@ -1,7 +1,7 @@
 name: AnyAPI CI
 on:
   push:
-    branches: [main, 'v0/**']
+    branches: [main, 'v0/**', 'feat/**']
   pull_request:
 jobs:
   pytest:
