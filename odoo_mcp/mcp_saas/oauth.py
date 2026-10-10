@@ -4,7 +4,7 @@ from __future__ import annotations
 import ipaddress
 from urllib.parse import urlsplit
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request, redirect, render_template_string
 
 from .errors import AppError, OAuthError
 from .network import NetworkError, PinnedHttpsTransport, assert_safe_odoo_url
@@ -188,3 +188,104 @@ class AuthorizationService:
 
     def authenticate_access_token(self, token: str, resource: str) -> dict:
         return self.store.authenticate_access_token(token, resource)
+
+def _service() -> AuthorizationService:
+    provider = current_app.extensions.get("odoo_mcp.oauth_service")
+    if provider is None:
+        raise OAuthError("temporarily_unavailable")
+    return provider
+
+
+def _safe_oauth_error(code: str = "invalid_request", status: int = 400):
+    response = jsonify(error=code if code in {
+        "invalid_request", "invalid_client", "invalid_grant", "unsupported_grant_type",
+        "invalid_scope", "invalid_target", "unsupported_response_type",
+    } else "invalid_request")
+    response.status_code = status
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@bp.route("/oauth/authorize", methods=["GET", "POST"])
+def authorize_http():
+    from .browser_auth import current_identity, _csrf_token, _verify_csrf
+    identity = current_identity()
+    if identity is None:
+        return redirect("/login")
+    try:
+        svc = _service()
+        params = dict(request.args) if request.method == "GET" else dict(request.form)
+        params.pop("csrf_token", None)
+        params.pop("decision", None)
+        inspected = svc.inspect(identity.id, params)
+        if request.method == "GET":
+            csrf = _csrf_token()
+            response = render_template_string(
+                """<!doctype html><html lang="en"><meta charset="utf-8">
+                <meta name="viewport" content="width=device-width,initial-scale=1">
+                <title>Authorize Odoo MCP</title>
+                <h1>Authorize client access</h1><p>Client: {{ name }}</p>
+                <p>Instance: {{ resource }}</p><p>Scope: {{ scopes }}</p>
+                <p>Only authorize clients you recognize.</p>
+                <form method="post">
+                {% for name,value in params.items() %}
+                <input type="hidden" name="{{ name }}" value="{{ value }}">
+                {% endfor %}
+                <input type="hidden" name="csrf_token" value="{{ csrf }}">
+                <button type="submit" name="decision" value="approve">Allow read access</button>
+                <button type="submit" name="decision" value="deny">Deny</button>
+                </form></html>""",
+                name=inspected["client_name"],resource=inspected["resource"],
+                scopes=" ".join(inspected["scopes"]),params=params,csrf=csrf,
+            )
+            return response, 200, {"Cache-Control": "no-store"}
+        _verify_csrf()
+        if request.form.get("decision") != "approve":
+            return _safe_oauth_error("invalid_request")
+        approval = svc.approve(identity.id, params)
+        from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
+        validated = urlsplit(approval["redirect_uri"])
+        query = parse_qsl(validated.query, keep_blank_values=True)
+        query += [("code",approval["code"]),("state",approval["state"])]
+        destination = urlunsplit((validated.scheme,validated.netloc,validated.path,
+                                  urlencode(query),validated.fragment))
+        return redirect(destination, code=302)
+    except OAuthError as exc:
+        return _safe_oauth_error(str(exc))
+
+
+@bp.post("/oauth/token")
+def token_http():
+    try:
+        svc = _service()
+        grant_type = request.form.get("grant_type")
+        if grant_type == "authorization_code":
+            token = svc.exchange_code(dict(request.form))
+        elif grant_type == "refresh_token":
+            refresh = request.form.get("refresh_token")
+            client_id = request.form.get("client_id")
+            resource = request.form.get("resource")
+            if not refresh or not client_id or not resource:
+                raise OAuthError("invalid_grant")
+            token = svc.store.rotate_refresh(refresh, client_id, resource)
+        else:
+            raise OAuthError("unsupported_grant_type")
+        response = jsonify(token)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return response
+    except OAuthError as exc:
+        return _safe_oauth_error(str(exc))
+
+
+@bp.post("/oauth/revoke")
+def revoke_http():
+    try:
+        svc = _service()
+        token = request.form.get("token")
+        if not token:
+            raise OAuthError("invalid_request")
+        svc.store.revoke_token(token, request.form.get("client_id") or None)
+        return "", 200, {"Cache-Control": "no-store"}
+    except OAuthError as exc:
+        return _safe_oauth_error(str(exc))
