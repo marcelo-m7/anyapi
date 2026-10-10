@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from flask import Blueprint, current_app, jsonify, request
 
 from .errors import AppError
+from .oauth_store import OAuthError
 from .tools import ToolContext, ToolRegistry
 
 bp = Blueprint("odoo_mcp_http", __name__)
@@ -139,7 +140,7 @@ def mcp_endpoint(public_id: str):
         context = context_factory(grant, public_id)
         if not isinstance(context, ToolContext):
             raise AppError("not_authorized", 401, "Unauthorized MCP request")
-    except (AppError, ValueError, TypeError):
+    except (AppError, OAuthError, ValueError, TypeError):
         return _oauth_challenge(public_id)
     result, status = dispatch_rpc(context, data)
     if result is None:
