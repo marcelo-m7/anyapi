@@ -7,7 +7,7 @@ from .browser_auth import bp as auth_bp, SupabaseAuthProvider
 from .mcp_http import bp as mcp_bp
 from .oauth import bp as oauth_bp
 from .oauth import AuthorizationService, ClientMetadataResolver
-from .oauth_store import OAuthStore
+from importlib.util import find_spec
 
 
 def create_app(settings: Settings | None = None, dependencies: dict | None = None) -> Flask:
@@ -34,10 +34,16 @@ def create_app(settings: Settings | None = None, dependencies: dict | None = Non
     app.extensions["odoo_mcp.context_factory"] = (
         dependencies.get("context_factory") if dependencies is not None else None)
     app.register_blueprint(mcp_bp)
-    oauth_store = (
-        dependencies.get("oauth_store") if dependencies is not None and "oauth_store" in dependencies
-        else (OAuthStore(config.db_dsn) if config.db_dsn.startswith(("postgresql://", "postgres://")) else None)
-    )
+    if dependencies is not None and "oauth_store" in dependencies:
+        oauth_store = dependencies["oauth_store"]
+    elif (config.db_dsn.startswith(("postgresql://", "postgres://"))
+          and find_spec("psycopg") is not None
+          and find_spec("authlib") is not None):
+        # Never require dedicated OAuth dependencies in the original AnyAPI CI.
+        from .oauth_store import OAuthStore
+        oauth_store = OAuthStore(config.db_dsn)
+    else:
+        oauth_store = None
     oauth_transport = (dependencies.get("oauth_client_transport")
                        if dependencies is not None else None)
     app.extensions["odoo_mcp.oauth_service"] = (
