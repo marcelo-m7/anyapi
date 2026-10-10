@@ -142,18 +142,18 @@ def execute(
                 records=supabase().service().select("edge_function_catalog",{"select":"slug,input_schema,output_schema","enabled":"eq.true","slug":"in.("+",".join(sorted(names))+")"})
                 catalog={row["slug"]:row for row in records}
             output=edge_pipeline.run_pipeline(processor,input_data,context,catalog,load_settings(),deadline,log)
-        elif processor.get("type") == "code":
-            raise RunnerUnavailable("Code processors are disabled in AnyAPI V1")
-            result = runner.run(processor.get("language", ""), processor.get("code", ""), input_data, context, timeout_ms)
-            logs.extend(result.logs)
-            output = result.output
-            log("info", f"Code processor finished in {result.duration_ms}ms")
-        else:
+        elif processor.get("type") == "visual":
+            # Existing published visual-only processors remain readable for backwards compatibility.
+            # New publication of visual processors is rejected by validate_config.
+            if any(isinstance(step, dict) and step.get("type") == "http" for step in processor.get("steps") or []):
+                raise RunnerUnavailable("Legacy HTTP connectors are disabled in AnyAPI V1")
             state = {"input": input_data, "vars": {}, "steps": {}, "output": {}, "context": context}
             output = declarative.run_steps(
-                processor.get("steps") or [], state, connectors=connectors, deadline=deadline, log=log
+                processor.get("steps") or [], state, connectors={}, deadline=deadline, log=log
             )
-            log("info", f"Visual processor ran {len(processor.get('steps') or [])} step(s)")
+            log("info", "Legacy visual processor completed")
+        else:
+            raise RunnerUnavailable("This processor type is not supported in AnyAPI V1")
     except RunnerUnavailable as exc:
         log("error", str(exc))
         return finish(
