@@ -1,0 +1,74 @@
+"""Central Supabase Edge Function pipeline; no user code or arbitrary destination URLs."""
+from __future__ import annotations
+import re
+import time
+import requests
+from .paths import render_template
+from .schema import validate
+from .code_runner import RunnerError
+
+SLUG=re.compile(r"^[a-z][a-z0-9-]{1,62}$")
+MAX_STEPS=8
+
+def validate_pipeline(processor, catalog):
+    errors=[]
+    if not isinstance(processor,dict) or processor.get("type")!="edge_pipeline":
+        return [{"path":"processor.type","message":"Expected edge_pipeline"}]
+    steps=processor.get("steps")
+    if not isinstance(steps,list) or not 1<=len(steps)<=MAX_STEPS:
+        return [{"path":"processor.steps","message":"Pipeline requires 1 to 8 steps"}]
+    identifiers=set()
+    for i,step in enumerate(steps):
+        if not isinstance(step,dict):
+            errors.append({"path":f"processor.steps[{i}]","message":"Expected object"});continue
+        identifier=step.get("id")
+        slug=step.get("function")
+        if not isinstance(identifier,str) or not re.fullmatch(r"[a-z][a-z0-9_]{0,30}",identifier) or identifier in identifiers:
+            errors.append({"path":f"processor.steps[{i}].id","message":"Unique lowercase identifier required"})
+        else: identifiers.add(identifier)
+        if not isinstance(slug,str) or slug not in catalog:
+            errors.append({"path":f"processor.steps[{i}].function","message":"Function is not registered or enabled"})
+        arguments=step.get("arguments")
+        if not isinstance(arguments,dict):
+            errors.append({"path":f"processor.steps[{i}].arguments","message":"Expected mapping object"})
+        if step.get("on_error","stop") not in ("stop","continue"):
+            errors.append({"path":f"processor.steps[{i}].on_error","message":"Invalid failure policy"})
+    return errors
+
+def run_pipeline(processor,input_data,context,catalog,settings,deadline,log):
+    problems=validate_pipeline(processor,catalog)
+    if problems: raise RunnerError("Invalid pipeline configuration","invalid_processor")
+    state={"input":input_data,"steps":{},"context":context}
+    for position,step in enumerate(processor["steps"]):
+        if time.monotonic()>=deadline: raise RunnerError("Pipeline time limit exceeded","timeout")
+        slug=step["function"]
+        record=catalog[slug]
+        args=render_template(step["arguments"],state)
+        invalid=validate(args,record["input_schema"])
+        if invalid: raise RunnerError(f"Arguments for step {position+1} violate schema","input_validation")
+        remaining=max(0.1,min(deadline-time.monotonic(),8.0))
+        endpoint=f"{settings.supabase_url}/functions/v1/{slug}"
+        key=settings.supabase_service_key
+        if not key: raise RunnerError("Supabase function credentials unavailable","runtime_unavailable")
+        # All destinations come from the server-owned registry; never from users.
+        try:
+            response=requests.post(endpoint,json=args,headers={"apikey":key,"Authorization":"Bearer "+key},timeout=remaining,allow_redirects=False)
+            if response.is_redirect: raise RunnerError("Function redirects are prohibited","upstream_error")
+            if len(response.content)>1_000_000: raise RunnerError("Function response too large","upstream_error")
+            envelope=response.json()
+        except (requests.RequestException,ValueError) as exc:
+            raise RunnerError("Edge Function request failed","upstream_error") from exc
+        if not isinstance(envelope,dict) or type(envelope.get("success")) is not bool or not isinstance(envelope.get("meta"),dict) or "data" not in envelope or "error" not in envelope:
+            raise RunnerError("Edge Function returned an invalid envelope","upstream_error")
+        if response.status_code>=400 or not envelope["success"]:
+            log("warn",f"Step {step['id']} failed")
+            if step.get("on_error","stop")=="continue":
+                state["steps"][step["id"]]=envelope
+                continue
+            raise RunnerError("Edge Function failed at step "+step["id"],"upstream_error")
+        if validate(envelope["data"],record["output_schema"]):
+            raise RunnerError("Edge Function output schema mismatch","output_validation")
+        state["steps"][step["id"]]=envelope
+        log("info",f"Completed {step['id']} ({slug})")
+    output=render_template(processor.get("output", "{{steps."+processor["steps"][-1]["id"]+".data}}"),state)
+    return output
