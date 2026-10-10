@@ -36,7 +36,24 @@
     up.onclick=()=>{[current.steps[index-1],current.steps[index]]=[current.steps[index],current.steps[index-1]];save();draw()};
     down.onclick=()=>{[current.steps[index],current.steps[index+1]]=[current.steps[index+1],current.steps[index]];save();draw()};
     del.onclick=()=>{current.steps.splice(index,1);save();draw()};
-    row.append(up,down,del);box.append(title,hint,args,row);rows.append(box);
+    const argumentTable=make("div");argumentTable.style.margin="12px 0";
+    const definition=catalog.find(item=>item.slug===step.function);
+    const fields=definition?.input_schema?.properties||{};
+    const required=new Set(definition?.input_schema?.required||[]);
+    for(const [field,schema] of Object.entries(fields)){
+      const fieldRow=make("div");fieldRow.className="row";fieldRow.style.margin="8px 0";
+      const fieldLabel=make("span",field+" · "+(schema.type||"any")+(required.has(field)?" *":""));
+      fieldLabel.style.minWidth="150px";
+      const picker=make("select");
+      [["custom","Custom / literal"],["input","Input: "+field],...current.steps.slice(0,index).map(previous=>["step:"+previous.id,"Step: "+previous.id+".data"])].forEach(([value,label])=>{const option=make("option",label);option.value=value;picker.append(option)});
+      const input=make("input");input.placeholder="{{input."+field+"}}";
+      const old=(step.arguments||{})[field];input.value=typeof old==="string"?old:old===undefined?"":JSON.stringify(old);
+      input.onchange=()=>{step.arguments||={};const value=input.value.trim();if(!value && !required.has(field))delete step.arguments[field];else step.arguments[field]=value;args.value=JSON.stringify(step.arguments,null,2);save()};
+      picker.onchange=()=>{if(picker.value==="input")input.value="{{input."+field+"}}";else if(picker.value.startsWith("step:"))input.value="{{steps."+picker.value.slice(5)+".data}}";input.onchange()};
+      fieldRow.append(fieldLabel,picker,input);argumentTable.append(fieldRow);
+    }
+    const argumentsTitle=make("small","Argument mapping (schema-driven). Advanced JSON editor below:");
+    row.append(up,down,del);box.append(title,hint,argumentTable,argumentsTitle,args,row);rows.append(box);
    });
    output.value=current.output||"";
   }
