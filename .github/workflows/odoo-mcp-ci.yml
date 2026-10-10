@@ -31,13 +31,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.12'
-      - name: Regenerate lock for new Authlib dependency (temporary)
-        run: |
-          cd odoo_mcp
-          uv lock
-          echo BEGIN_ODOO_MCP_UV_LOCK
-          cat uv.lock
-          echo END_ODOO_MCP_UV_LOCK
+      - name: Validate committed lockfile
+        run: cd odoo_mcp && uv lock --check
       - name: Install and execute Odoo MCP TDD suite
         run: |
           cd odoo_mcp
