@@ -224,5 +224,5 @@ def revoke_api_key(key_id):
     if not u:return error("unauthorized",401)
     original=db.select_one("api_keys",{"id":"eq."+key_id,"owner_id":"eq."+u["id"],"select":"id"})
     if not original:return error("not_found",404)
-    rows=db.update("api_keys",{"id":"eq."+key_id,"owner_id":"eq."+u["id"]},{"revoked_at":"now()"},"id,revoked_at")
+    rows=db.update("api_keys",{"id":"eq."+key_id,"owner_id":"eq."+u["id"]},{"revoked_at":__import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()},"id,revoked_at")
     return jsonify(rows[0] if rows else {"revoked":True})
