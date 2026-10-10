@@ -126,10 +126,10 @@ def login_required(view: Callable) -> Callable:
 
 def _safe_next(target: str | None) -> str:
     if not target:
-        return url_for("pages.dashboard")
+        return url_for("dashboard")
     parsed = urlparse(target)
     if parsed.scheme or parsed.netloc or not target.startswith("/") or target.startswith("//"):
-        return url_for("pages.dashboard")
+        return url_for("dashboard")
     return target
 
 
@@ -159,7 +159,7 @@ def _friendly_auth_error(exc: SupabaseError, fallback: str) -> str:
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET" and current_user():
-        return redirect(url_for("pages.dashboard"))
+        return redirect(url_for("dashboard"))
     if request.method == "POST":
         verify_csrf()
         email = request.form.get("email", "").strip().lower()
@@ -196,7 +196,7 @@ def username_available():
 @bp.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "GET" and current_user():
-        return redirect(url_for("pages.dashboard"))
+        return redirect(url_for("dashboard"))
     form = {"email": "", "username": "", "display_name": ""}
     if request.method == "POST":
         verify_csrf()
@@ -232,7 +232,7 @@ def signup():
                 session["pkce_verifier"] = verifier
                 if data.get("access_token"):
                     _store_session(data)
-                    return redirect(url_for("pages.dashboard"))
+                    return redirect(url_for("dashboard"))
                 return redirect(url_for("auth.signup_success", email=form["email"]))
             except SupabaseError as exc:
                 if "already registered" in exc.message.lower() or exc.code == "user_already_exists":
@@ -297,7 +297,7 @@ def accept_fragment_session():
         }
     )
     session.pop("profile", None)
-    target = url_for("auth.reset_password") if payload.get("type") == "recovery" else url_for("pages.dashboard")
+    target = url_for("auth.reset_password") if payload.get("type") == "recovery" else url_for("dashboard")
     return jsonify({"ok": True, "redirect": target})
 
 
@@ -339,7 +339,7 @@ def reset_password():
             try:
                 sb().update_password(auth["access_token"], password)
                 flash("Password updated.", "success")
-                return redirect(url_for("pages.dashboard"))
+                return redirect(url_for("dashboard"))
             except SupabaseError as exc:
                 flash(_friendly_auth_error(exc, "Could not update the password. Try again."), "error")
     return render_template("auth/reset.html", user=user)
@@ -352,7 +352,7 @@ def logout():
     if auth:
         sb().sign_out(auth["access_token"])
     clear_session()
-    return redirect(url_for("pages.landing"))
+    return redirect(url_for("landing"))
 
 
 __all__ = ["bp", "current_user", "login_required", "csrf_token", "verify_csrf", "sb", "RESERVED_NAMES"]
