@@ -164,51 +164,6 @@ def executions(endpoint_id):
     if not endpoint:return error("not_found",404)
     return jsonify(db.select("executions",{"endpoint_id":"eq."+endpoint_id,"owner_id":"eq."+u["id"],"select":"id,created_at,status_code,duration_ms,success,error_type,source","order":"created_at.desc","limit":"50"}))
 
-@bp.route("/projects/<project_id>/connectors", methods=["GET","POST"])
-def project_connectors(project_id):
-    if request.method=="POST":verify_csrf()
-    u,db=user_client()
-    if not u:return error("unauthorized",401)
-    project=db.select_one("projects",{"id":"eq."+project_id,"owner_id":"eq."+u["id"],"select":"id"})
-    if not project:return error("not_found",404)
-    if request.method=="GET":
-        return jsonify(db.select("connectors",{"project_id":"eq."+project_id,"owner_id":"eq."+u["id"],"select":"id,name,type,config,secret_hint,created_at"}))
-    from anyapi.services import secret_box
-    values=request.get_json(silent=True) or {}
-    name=str(values.get("name") or "").strip()
-    config=values.get("config") or {}
-    if not name or len(name)>80 or not isinstance(config,dict):return error("Invalid connector")
-    if values.get("type","http")!="http":return error("Only HTTP connectors are supported")
-    url=config.get("base_url") or config.get("url")
-    from urllib.parse import urlparse
-    if not isinstance(url,str) or urlparse(url).scheme!="https" or not urlparse(url).hostname:
-        return error("HTTPS destination required")
-    config={**config,"base_url":url}
-    config.pop("url",None)
-    secret=values.get("secret") or ""
-    if secret and (not isinstance(secret,str) or len(secret)>4096):return error("Invalid secret")
-    from anyapi.security import secret_hint
-    try:
-        payload={"project_id":project_id,"owner_id":u["id"],"name":name,"type":"http","config":config}
-        if secret:
-            payload["secret_ciphertext"]=secret_box().encrypt(secret)
-            payload["secret_hint"]=secret_hint(secret)
-        created=db.insert("connectors",payload,select="id,name,type,config,secret_hint,created_at")
-        return jsonify(created),201
-    except (SupabaseError,RuntimeError) as exc:return error("Could not create connector")
-
-@bp.delete("/connectors/<connector_id>")
-def delete_connector(connector_id):
-    verify_csrf()
-    u,db=user_client()
-    if not u:return error("unauthorized",401)
-    record=db.select_one("connectors",{"id":"eq."+connector_id,"owner_id":"eq."+u["id"],"select":"id"})
-    if not record:return error("not_found",404)
-    try:
-        db.delete("connectors",{"id":"eq."+connector_id,"owner_id":"eq."+u["id"]})
-        return "",204
-    except SupabaseError:return error("Connector could not be deleted",409)
-
 @bp.route("/projects/<project_id>/api-keys", methods=["GET","POST"])
 def project_api_keys(project_id):
     if request.method=="POST":verify_csrf()
