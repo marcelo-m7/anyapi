@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from flask import Flask, jsonify
-from importlib.util import find_spec
 from .settings import Settings
 from .browser_auth import bp as auth_bp, SupabaseAuthProvider
 from .mcp_http import bp as mcp_bp
@@ -46,21 +45,6 @@ def create_app(settings: Settings | None = None, dependencies: dict | None = Non
         if oauth_store is not None and config.public_url.startswith("https://") else None
     )
     app.register_blueprint(oauth_bp)
-    if dependencies is not None and "oauth_service" in dependencies:
-        app.extensions["odoo_mcp.oauth_service"] = dependencies["oauth_service"]
-    elif (config.db_dsn.startswith(("postgresql://", "postgres://"))
-          and config.public_url.startswith("https://")
-          and find_spec("psycopg") is not None
-          and find_spec("authlib") is not None):
-        # Instantiate the service without connecting during Flask import.
-        from .oauth_store import OAuthStore
-        from .oauth import AuthorizationService, ClientMetadataResolver
-        app.extensions["odoo_mcp.oauth_service"] = AuthorizationService(
-            OAuthStore(config.db_dsn), ClientMetadataResolver(), config.public_url)
-    else:
-        app.extensions["odoo_mcp.oauth_service"] = None
-
-
     @app.get("/health")
     def health():
         return jsonify(status="ok", service="odoo-mcp-saas")
