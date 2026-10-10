@@ -97,10 +97,11 @@ def test_http_connector_egress_disabled_without_protected_network(monkeypatch):
         request("GET","https://example.com")
 
 
-def test_project_connectors_normalize_base_url():
+def test_v1_removes_arbitrary_connector_management():
     from pathlib import Path
-    content=Path("anyapi/management.py").read_text()
-    assert 'config={**config,"base_url":url}' in content
+    source=Path("anyapi/management.py").read_text()
+    assert '@bp.route("/projects/<project_id>/connectors"' not in source
+
 
 def test_edge_pipeline_rejects_unlisted_functions():
     from anyapi.runtime.edge_pipeline import validate_pipeline
