@@ -89,3 +89,38 @@ def test_policy_disable_is_effective_next_resolution(records):
     finally:
         with psycopg.connect(DSN) as db:
             db.execute("update public.odoo_mcp_policies set enabled=true where server_id=%s",(s1,))
+
+
+def test_production_factory_binds_real_opaque_oauth_grants(records):
+    """A real PostgreSQL-issued bearer must reach tools/list without a test-only auth bypass."""
+    from mcp_saas.app_factory import create_app
+    from mcp_saas.settings import Settings
+    from mcp_saas.oauth_store import OAuthStore
+
+    owner, other_owner, server, other_server = records
+    resource = "https://mcp.example.org/mcp/" + "c"*40
+    token = OAuthStore(DSN).issue_tokens(
+        owner, server, "https://client.example.org/client.json", resource, ["odoo:read"]
+    )["access_token"]
+    settings = Settings.from_env({
+        "SUPABASE_URL": "https://sample.supabase.co",
+        "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_test",
+        "SUPABASE_SECRET_KEY": "sb_secret_test",
+        "ODOO_MCP_DB_DSN": DSN,
+        "ODOO_MCP_ENCRYPTION_KEY": KEY,
+        "ODOO_MCP_SESSION_KEY": "different-cookie-master-key-0123456789",
+        "ODOO_MCP_PUBLIC_URL": "https://mcp.example.org",
+    })
+    client = create_app(settings=settings).test_client()
+    headers = {
+        "Authorization": "Bearer " + token,
+        "Accept": "application/json, text/event-stream",
+        "MCP-Protocol-Version": "2025-11-25",
+    }
+    rpc = {"jsonrpc": "2.0", "method": "tools/list", "id": 23}
+    response = client.post("/mcp/" + "c"*40, json=rpc, headers=headers)
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["id"] == 23
+    assert "odoo_list_models" in [t["name"] for t in body["result"]["tools"]]
+    assert client.post("/mcp/"+"d"*40,json=rpc,headers=headers).status_code == 401
