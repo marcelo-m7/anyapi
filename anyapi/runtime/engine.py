@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import declarative, schema
+from . import declarative, schema, edge_pipeline
 from .code_runner import CodeRunner, RunnerError, RunnerUnavailable
 
 ALLOWED_RESPONSE_HEADER_PREFIXES = ("x-",)
@@ -66,7 +66,9 @@ def validate_config(config: dict[str, Any], connector_ids: set[str], runner: Cod
             problems.append({"path": f"{key}{'/' + problem['path'] if problem['path'] else ''}", "message": problem["message"]})
     processor = config.get("processor") or {}
     kind = processor.get("type")
-    if kind == "visual":
+    if kind == "edge_pipeline":
+        problems.extend(edge_pipeline.validate_pipeline(processor, connector_ids))
+    elif kind == "visual":
         problems.extend(declarative.validate_steps(processor.get("steps"), connector_ids))
     elif kind == "code":
         if processor.get("language") not in ("python", "javascript"):
@@ -81,7 +83,7 @@ def validate_config(config: dict[str, Any], connector_ids: set[str], runner: Cod
                 }
             )
     else:
-        problems.append({"path": "processor.type", "message": "Processor type must be visual or code"})
+        problems.append({"path": "processor.type", "message": "Unsupported processor type"})
     status_code = (config.get("response_config") or {}).get("status_code", 200)
     if not isinstance(status_code, int) or not 200 <= status_code <= 299:
         problems.append({"path": "response_config.status_code", "message": "Success status must be between 200 and 299"})
@@ -125,7 +127,16 @@ def execute(
 
     processor = config.get("processor") or {}
     try:
-        if processor.get("type") == "code":
+        if processor.get("type") == "edge_pipeline":
+            from anyapi.services import supabase
+            from anyapi.config import load_settings
+            names={s["function"] for s in processor.get("steps",[]) if isinstance(s,dict) and isinstance(s.get("function"),str)}
+            catalog={}
+            if names:
+                records=supabase().service().select("edge_function_catalog",{"select":"slug,input_schema,output_schema","enabled":"eq.true","slug":"in.("+",".join(sorted(names))+")"})
+                catalog={row["slug"]:row for row in records}
+            output=edge_pipeline.run_pipeline(processor,input_data,context,catalog,load_settings(),deadline,log)
+        elif processor.get("type") == "code":
             result = runner.run(processor.get("language", ""), processor.get("code", ""), input_data, context, timeout_ms)
             logs.extend(result.logs)
             output = result.output
