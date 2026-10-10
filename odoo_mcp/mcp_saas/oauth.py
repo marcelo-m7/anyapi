@@ -7,6 +7,7 @@ from urllib.parse import urlsplit
 from flask import Blueprint, current_app, jsonify
 
 from .errors import AppError
+from .oauth_store import OAuthError
 from .network import NetworkError, PinnedHttpsTransport, assert_safe_odoo_url
 
 bp = Blueprint("odoo_mcp_oauth", __name__)
@@ -110,3 +111,81 @@ def authorization_server_metadata():
     })
     response.headers["Cache-Control"] = "no-store"
     return response
+
+class AuthorizationService:
+    """Authorize PKCE grants before any MCP tool can be invoked.
+
+    Routes are intentionally not registered yet: consent and token exchange
+    must be wired with browser login, CSRF and transactional code verification.
+    """
+
+    def __init__(self, store, clients: ClientMetadataResolver, issuer: str):
+        self.store = store
+        self.clients = clients
+        self.issuer = issuer.rstrip("/")
+
+    def inspect(self, owner_id: str, parameters: dict) -> dict:
+        import re
+        if not isinstance(parameters, dict):
+            raise OAuthError("invalid_request")
+        if parameters.get("response_type") != "code":
+            raise OAuthError("unsupported_response_type")
+        if parameters.get("code_challenge_method") != "S256":
+            raise OAuthError("invalid_request")
+        challenge = parameters.get("code_challenge")
+        if not isinstance(challenge, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", challenge):
+            raise OAuthError("invalid_request")
+        resource = parameters.get("resource")
+        if not isinstance(resource, str) or not resource.startswith(self.issuer + "/mcp/"):
+            raise OAuthError("invalid_target")
+        from .mcp_http import _PUBLIC_ID
+        public_id = resource[len(self.issuer + "/mcp/"):]
+        if not _PUBLIC_ID.fullmatch(public_id):
+            raise OAuthError("invalid_target")
+        server = self.store.get_authorized_server(public_id, owner_id)
+        if not server or not server.get("enabled"):
+            raise OAuthError("invalid_target")
+        scope = parameters.get("scope")
+        if scope != "odoo:read":
+            # No implicit write consent, even when the client requests it.
+            raise OAuthError("invalid_scope")
+        redirect = parameters.get("redirect_uri")
+        client_id = parameters.get("client_id")
+        try:
+            metadata = self.clients.validate_client(client_id, redirect)
+        except AppError as exc:
+            raise OAuthError("invalid_client") from exc
+        if not isinstance(parameters.get("state"), str) or not parameters["state"]:
+            raise OAuthError("invalid_request")
+        return {"owner_id": owner_id, "server_id": str(server["id"]),
+                "client_id": client_id, "client_name": metadata["client_name"],
+                "redirect_uri": redirect, "resource": resource, "scopes": ["odoo:read"],
+                "pkce_challenge": challenge, "state": parameters["state"]}
+
+    def approve(self, owner_id: str, parameters: dict) -> dict:
+        reviewed = self.inspect(owner_id, parameters)
+        code = self.store.issue_code(
+            reviewed["owner_id"], reviewed["server_id"], reviewed["client_id"],
+            reviewed["redirect_uri"], reviewed["resource"], reviewed["scopes"],
+            reviewed["pkce_challenge"],
+        )
+        return {"code": code, "state": reviewed["state"], "redirect_uri": reviewed["redirect_uri"]}
+
+    def exchange_code(self, parameters: dict) -> dict:
+        if parameters.get("grant_type") != "authorization_code":
+            raise OAuthError("unsupported_grant_type")
+        verifier = parameters.get("code_verifier")
+        import re
+        if not isinstance(verifier, str) or not re.fullmatch(r"[A-Za-z0-9_~.\\-]{43,128}", verifier):
+            raise OAuthError("invalid_grant")
+        # Atomic store implementation must verify PKCE *inside the code-consuming transaction*.
+        grant = self.store.consume_code(
+            parameters.get("code"), parameters.get("client_id"),
+            parameters.get("redirect_uri"), parameters.get("resource"), verifier,
+        )
+        if hasattr(self.store, "issue_tokens_from_grant"):
+            return self.store.issue_tokens_from_grant(grant)
+        return self.store.issue_tokens(grant)
+
+    def authenticate_access_token(self, token: str, resource: str) -> dict:
+        return self.store.authenticate_access_token(token, resource)
