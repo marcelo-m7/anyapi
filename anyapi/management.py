@@ -107,3 +107,46 @@ def rollback(endpoint_id):
     try:
         return jsonify(db.rpc("rollback_endpoint",{"p_endpoint_id":endpoint_id,"p_version":int(data["version"])}))
     except (SupabaseError,ValueError,KeyError) as exc:return error(str(exc))
+
+@bp.post("/endpoints/<endpoint_id>/test")
+def test_endpoint(endpoint_id):
+    verify_csrf()
+    u,db=user_client()
+    if not u:return error("unauthorized",401)
+    endpoint=db.select_one("endpoints",{"id":"eq."+endpoint_id,"owner_id":"eq."+u["id"],"select":"*"})
+    if not endpoint:return error("not_found",404)
+    from anyapi.services import load_connectors, new_request_id, log_execution
+    from anyapi.runtime.engine import execute
+    config=snapshot_config(endpoint)
+    attached=referenced_connector_ids(config.get("processor"))
+    available=db.select("connectors",{"project_id":"eq."+endpoint["project_id"],"owner_id":"eq."+u["id"],"select":"id"})
+    problems=validate_config(config,{str(row["id"]) for row in available},runner())
+    if problems:return jsonify(error="validation_failed",fields=problems),422
+    body=request.get_json(silent=True)
+    if body is None:return error("JSON body required")
+    try:
+        connectors=load_connectors(endpoint["project_id"],attached)
+        result=execute(config,body,{"source":"test"},connectors=connectors,runner=runner())
+        request_id=new_request_id()
+        log_execution(endpoint_id=endpoint_id,owner_id=u["id"],version_id=None,version=None,source="test",request_id=request_id,method=endpoint["method"],result=result,request_body=body)
+        return jsonify(status=result.status_code,body=result.body,logs=result.logs,duration_ms=result.duration_ms,request_id=request_id)
+    except Exception:
+        from flask import current_app
+        current_app.logger.exception("Endpoint test failed")
+        return error("Test execution failed",500)
+
+@bp.get("/endpoints/<endpoint_id>/versions")
+def versions(endpoint_id):
+    u,db=user_client()
+    if not u:return error("unauthorized",401)
+    endpoint=db.select_one("endpoints",{"id":"eq."+endpoint_id,"owner_id":"eq."+u["id"],"select":"id"})
+    if not endpoint:return error("not_found",404)
+    return jsonify(db.select("endpoint_versions",{"endpoint_id":"eq."+endpoint_id,"owner_id":"eq."+u["id"],"select":"id,version,notes,created_at","order":"version.desc"}))
+
+@bp.get("/endpoints/<endpoint_id>/executions")
+def executions(endpoint_id):
+    u,db=user_client()
+    if not u:return error("unauthorized",401)
+    endpoint=db.select_one("endpoints",{"id":"eq."+endpoint_id,"owner_id":"eq."+u["id"],"select":"id"})
+    if not endpoint:return error("not_found",404)
+    return jsonify(db.select("executions",{"endpoint_id":"eq."+endpoint_id,"owner_id":"eq."+u["id"],"select":"id,created_at,status_code,duration_ms,success,error_type,source","order":"created_at.desc","limit":"50"}))
