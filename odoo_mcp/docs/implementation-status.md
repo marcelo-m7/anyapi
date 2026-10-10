@@ -8,9 +8,9 @@ Plan: `docs/superpowers/plans/2026-10-10-odoo-mcp-saas-v1.md`
 
 ## Last green verification
 
-- Commit: `04b52084740800c68329fe463997da5c18879290`
-- Odoo MCP CI: https://github.com/marcelo-m7/anyapi/actions/runs/38091376208 — 100 passed
-- Root AnyAPI CI: https://github.com/marcelo-m7/anyapi/actions/runs/38091376198 — success
+- Commit: `199169a52e00e679b24f0a1c70a703dfe41c41b3`
+- Odoo MCP CI: https://github.com/marcelo-m7/anyapi/actions/runs/38091696436 — 101 passed
+- Root AnyAPI CI: https://github.com/marcelo-m7/anyapi/actions/runs/38091696417 — success
 - AnyAPI regression suite exercised in isolated CI: 5 passed
 - PostgreSQL 17 runs as a disposable GitHub Actions service; no shared Supabase migration applied.
 
@@ -24,11 +24,11 @@ Plan: `docs/superpowers/plans/2026-10-10-odoo-mcp-saas-v1.md`
 6. Stateless MCP JSON-RPC HTTP handling with fail-closed authentication.
 7. OAuth AS and resource metadata, Client ID Metadata verification, atomic one-use codes.
 8. OAuth authorization-code PKCE consent/token/revoke HTTP routes, hashed opaque tokens, expiry, refresh rotation with token-family replay revocation.
-9. Owner/server/connection/secret policy resolver `ContextResolver` with cross-tenant, audience and immediate policy-disable tests.
+9. Owner/server/connection/secret policy resolver `ContextResolver`, wired to production Flask MCP requests using real hashed OAuth bearer tokens, with cross-tenant, audience and immediate policy-disable tests.
 
 ## Critical open integration and security gates
 
-- The real production Flask MCP endpoint still intentionally has no `context_factory` or `authorizer` wired for Odoo tool calls; it rejects unauthorized calls. Do not remove this gate before audit and quota enforcement.
+- Real OAuth bearer tokens are now bound to the production Flask MCP route when all required environment settings are valid. **Do not deploy this endpoint publicly yet:** quotas, audit controls, consent/security review, and operator controls are still missing.
 - Some OAuth endpoints are implemented but still require independent conformance and security review, including state/CSRF binding to consent, client ID metadata validity, redirect validation, session renewal, refresh-token family security, and issuer/resource handling.
 - There is no completed owner management UI/CRUD for connections and model-level policies.
 - Write tools are not implemented (the approved default read-only policy remains).
@@ -42,15 +42,15 @@ Plan: `docs/superpowers/plans/2026-10-10-odoo-mcp-saas-v1.md`
 
 - Tasks 1–6: locally implemented via GitHub and validated by separate CI; read-only MCP with simulated authenticated context.
 - Tasks 7–8: OAuth discovery/code/token implementation and HTTP consent tests green in CI; needs comprehensive audit and real client interoperability.
-- Task 9: `ContextResolver` tested independently; production wiring remains pending by design.
+- Task 9: production OAuth-to-context binding and cross-server rejection tested against disposable Postgres; remaining whole-system adversarial review required.
 - Tasks 10–13: remaining.
-- Ruling: keep live MCP access disabled until quotas, auditing and full auth-to-context binding tests are completed; cost is deferred public client interoperability.
+- Ruling: do not deploy the production-wired MCP endpoint publicly until quotas, auditing and authorization hardening pass security review; cost is deferred public client interoperability.
 - Ruling: apply Supabase migrations only after drift reconciliation and staging validation; cost is deferred database-backed preview.
 - Ruling: remote GitHub Actions is the authoritative test environment because no authenticated private repository clone/worktree is available locally; an independent reviewer should repeat all tests and inspect the full diff.
 
 ## Immediate next tasks
 
-1. Finish Task 9 production MCP grant context binding, with real OAuth Store and two-tenant negative tests and hard limits.
+1. Audit Task 9 production MCP grant/context integration with real OAuth Store and two-tenant negative tests, including rate caps before deployment.
 2. Implement Tasks 10–12 (owner CRUD/dashboard, opt-in bounded writes, audit and atomic rate quotas) via TDD.
 3. Reconcile/apply only approved Supabase migration in staging, create separate Vercel project and verify Odoo + ChatGPT E2E.
 4. Review the entire branch with explicit SSRF/OAuth/tenant/write-timeout adversarial cases, then request owner review. No automatic merge.
