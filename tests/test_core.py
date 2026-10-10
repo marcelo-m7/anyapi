@@ -101,3 +101,28 @@ def test_project_connectors_normalize_base_url():
     from pathlib import Path
     content=Path("anyapi/management.py").read_text()
     assert 'config={**config,"base_url":url}' in content
+
+def test_edge_pipeline_rejects_unlisted_functions():
+    from anyapi.runtime.edge_pipeline import validate_pipeline
+    processor={"type":"edge_pipeline","steps":[{"id":"step1","function":"untrusted-function","arguments":{}}]}
+    assert any("not registered" in e["message"] for e in validate_pipeline(processor,{}))
+
+
+def test_edge_pipeline_sequential_mapping(monkeypatch):
+    import time
+    from types import SimpleNamespace
+    from anyapi.runtime import edge_pipeline
+    seen=[]
+    def fake_post(url, json, **kwargs):
+        seen.append((url,json))
+        return SimpleNamespace(status_code=200,is_redirect=False,content=b"{}",json=lambda:{"success":True,"data":{**json,"processed":True},"error":None,"meta":{}})
+    monkeypatch.setattr(edge_pipeline.requests,"post",fake_post)
+    processor={"type":"edge_pipeline","steps":[
+        {"id":"first","function":"anyapi-normalize","arguments":{"url":"{{input.url}}"}},
+        {"id":"second","function":"anyapi-normalize","arguments":{"text":"{{steps.first.data.url}}"}}
+    ],"output":"{{steps.second.data}}"}
+    record={"input_schema":{"type":"object"},"output_schema":{"type":"object"}}
+    settings=SimpleNamespace(supabase_url="https://example.supabase.co",supabase_service_key="fixture-only")
+    output=edge_pipeline.run_pipeline(processor,{"url":"video"}, {},{"anyapi-normalize":record},settings,time.monotonic()+10,lambda *args:None)
+    assert seen[1][1]=={"text":"video"}
+    assert output=={"text":"video","processed":True}
