@@ -54,7 +54,7 @@ Mappings support previous successful step envelopes: `steps.first.data`, `steps.
 1. `0004_edge_function_catalog.sql` has been applied to the central Supabase project.
 2. The sample Edge Function `anyapi-normalize` was deployed with **JWT verification enabled**. Source: `supabase/functions/anyapi-normalize/index.ts`.
 3. It was registered in the catalog, category `utilities`, and enabled.
-4. Flask invokes `https://<SUPABASE_PROJECT>.supabase.co/functions/v1/<catalog-slug>` with service credentials kept server-side. **Verify that the configured credential is a valid JWT for Edge Function JWT validation.** New-style `sb_secret_` API keys are not JWTs; if in use, supply a compatible server-only legacy JWT key or implement an explicitly audited alternative authentication protocol. Never disable `verify_jwt` without independent authentication.
+4. Flask invokes `https://<SUPABASE_PROJECT>.supabase.co/functions/v1/<catalog-slug>` with service credentials kept server-side. **Verify that the configured credential is a valid JWT for Edge Function JWT validation.** New-style `sb_secret_` API keys are not JWTs; if in use, supply `ANYAPI_EDGE_FUNCTION_JWT` as a compatible server-only signed JWT or implement an explicitly audited alternative authentication protocol. Never disable `verify_jwt` without independent authentication.
 5. Publish the feature branch to a **Vercel preview**, configure secrets server-side and run authenticated E2E tests before merging.
 
 ## Release acceptance
