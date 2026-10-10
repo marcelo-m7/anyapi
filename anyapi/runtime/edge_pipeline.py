@@ -28,6 +28,7 @@ def validate_pipeline(processor, catalog):
         return [{"path":"processor.steps","message":"Pipeline requires 1 to 8 steps"}]
     identifiers=set()
     for i,step in enumerate(steps):
+        previous_ids=set(identifiers)
         if not isinstance(step,dict):
             errors.append({"path":f"processor.steps[{i}]","message":"Expected object"});continue
         identifier=step.get("id")
@@ -38,7 +39,7 @@ def validate_pipeline(processor, catalog):
         if not isinstance(slug,str) or slug not in catalog:
             errors.append({"path":f"processor.steps[{i}].function","message":"Function is not registered or enabled"})
         arguments=step.get("arguments")
-        future=_step_refs(arguments)-identifiers
+        future=_step_refs(arguments)-previous_ids
         if future: errors.append({"path":f"processor.steps[{i}].arguments","message":"Arguments reference a current, future or unknown step: "+",".join(sorted(future))})
         if not isinstance(arguments,dict):
             errors.append({"path":f"processor.steps[{i}].arguments","message":"Expected mapping object"})
