@@ -8,6 +8,17 @@ from anyapi.supabase import SupabaseError
 
 bp = Blueprint("management", __name__, url_prefix="/_api")
 
+def catalog_ids(db):
+    return {row["slug"] for row in db.select("edge_function_catalog",{"select":"slug","enabled":"eq.true"})}
+
+@bp.get("/edge-functions")
+def available_edge_functions():
+    u,db=user_client()
+    if not u:return error("unauthorized",401)
+    rows=supabase().service().select("edge_function_catalog",{"select":"slug,title,description,category,input_schema,output_schema","enabled":"eq.true","order":"category.asc,title.asc"})
+    return jsonify(rows)
+
+
 def user_client():
     u = current_user()
     if not u:
@@ -91,7 +102,8 @@ def publish(endpoint_id):
     if not endpoint:return error("not_found",404)
     ids=referenced_connector_ids(endpoint.get("processor"))
     available=db.select("connectors",{"project_id":"eq."+endpoint["project_id"],"owner_id":"eq."+u["id"],"select":"id"})
-    failures=validate_config(snapshot_config(endpoint),{str(c["id"]) for c in available},runner())
+    valid_ids=catalog_ids(supabase().service()) if (endpoint.get("processor") or {}).get("type")=="edge_pipeline" else {str(c["id"]) for c in available}
+    failures=validate_config(snapshot_config(endpoint),valid_ids,runner())
     if failures:return jsonify(error="validation_failed",fields=failures),422
     try:
         version=db.rpc("publish_endpoint",{"p_endpoint_id":endpoint_id,"p_config":snapshot_config(endpoint),"p_notes":(request.get_json(silent=True) or {}).get("notes")})
@@ -120,7 +132,8 @@ def test_endpoint(endpoint_id):
     config=snapshot_config(endpoint)
     attached=referenced_connector_ids(config.get("processor"))
     available=db.select("connectors",{"project_id":"eq."+endpoint["project_id"],"owner_id":"eq."+u["id"],"select":"id"})
-    problems=validate_config(config,{str(row["id"]) for row in available},runner())
+    valid_ids=catalog_ids(supabase().service()) if (config.get("processor") or {}).get("type")=="edge_pipeline" else {str(row["id"]) for row in available}
+    problems=validate_config(config,valid_ids,runner())
     if problems:return jsonify(error="validation_failed",fields=problems),422
     body=request.get_json(silent=True)
     if body is None:return error("JSON body required")
