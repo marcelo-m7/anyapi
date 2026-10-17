@@ -5,6 +5,12 @@ from anyapi.auth import current_user, login_required, verify_csrf
 from anyapi.supabase import SupabaseError
 
 bp = Blueprint("video_studio", __name__)
+
+@bp.before_request
+def studio_upload_limit():
+    # Only media upload needs a higher ceiling than the AnyAPI JSON gateway.
+    if request.endpoint == "video_studio.upload_scene_asset":
+        request.max_content_length = 20_100_000
 FORMATS = {"documentary", "short", "both"}
 SCENE_FIELDS = {"title", "narration", "visual_prompt", "duration_seconds", "position", "asset_url", "notes"}
 
