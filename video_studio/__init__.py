@@ -5,6 +5,12 @@ from anyapi.auth import current_user, login_required, verify_csrf
 from anyapi.supabase import SupabaseError
 
 bp = Blueprint("video_studio", __name__)
+
+@bp.before_request
+def studio_upload_limit():
+    # Only media upload needs a higher ceiling than the AnyAPI JSON gateway.
+    if request.endpoint == "video_studio.upload_scene_asset":
+        request.max_content_length = 20_100_000
 FORMATS = {"documentary", "short", "both"}
 SCENE_FIELDS = {"title", "narration", "visual_prompt", "duration_seconds", "position", "asset_url", "notes"}
 
@@ -150,3 +156,113 @@ def ai_storyboard_draft(project_id):
     except StoryboardError as exc:
         return fail(str(exc), 422)
     return jsonify({"scenes": scenes, "saved": False})
+
+@bp.get("/_api/video-studio/projects/<uuid:project_id>/jobs")
+@login_required
+def list_jobs(project_id):
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    jobs=client().select("video_jobs",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","select":"*","order":"created_at.desc","limit":"100"})
+    return jsonify(jobs)
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/jobs")
+@login_required
+def enqueue_job(project_id):
+    verify_csrf()
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    data=body()
+    operation=data.get("operation")
+    if operation not in ("image","video","voice","render","episode"):
+        return fail("Invalid operation")
+    scene_id=data.get("scene_id")
+    if operation in ("image","video","voice"):
+        from uuid import UUID
+        try:scene_uuid=UUID(str(scene_id))
+        except (ValueError,TypeError):return fail("Valid scene_id required")
+        sc=scene_or_404(scene_uuid)
+        if not sc or sc["project_id"]!=str(project_id):
+            return fail("Scene not found.",404)
+    else:
+        scene_id=None
+    options={"portrait":data.get("portrait") is True}
+    row={"owner_id":uid(),"project_id":str(project_id),"scene_id":str(scene_id) if scene_id else None,
+         "operation":operation,"options":options}
+    job=client().insert("video_jobs",row)
+    return jsonify(job),201
+
+@bp.get("/_api/video-studio/projects/<uuid:project_id>/media")
+@login_required
+def project_media(project_id):
+    """Only allow signing assets referenced by the authenticated owner's project."""
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    path=request.args.get("path","")
+    if not path or not path.startswith(f"{uid()}/{project_id}/") or ".." in path:
+        return fail("Invalid asset path")
+    scenes=client().select("video_scenes",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}",
+         "select":"image_path,video_path,voice_path,subtitles_path"})
+    jobs=client().select("video_jobs",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}",
+         "select":"result_path","status":"eq.completed"})
+    allowed={x.get(field) for x in scenes for field in ("image_path","video_path","voice_path","subtitles_path")}
+    allowed.update(j.get("result_path") for j in jobs)
+    allowed.update(str(j.get("result_path"))+".srt" for j in jobs if j.get("result_path"))
+    if path not in allowed:return fail("Asset not found.",404)
+    from .providers import Media,ProviderError
+    try:return jsonify(url=Media().signed(path))
+    except ProviderError:return fail("Media unavailable.",503)
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/upload")
+@login_required
+def upload_scene_asset(project_id):
+    verify_csrf()
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    from uuid import UUID
+    try:scene_id=UUID(request.form["scene_id"])
+    except (ValueError,KeyError):return fail("Scene id required.")
+    scene=scene_or_404(scene_id)
+    if not scene or scene["project_id"]!=str(project_id):return fail("Scene not found.",404)
+    upload=request.files.get("file")
+    if not upload:return fail("File required.")
+    data=upload.read(20_000_001)
+    if len(data)>20_000_000:return fail("File exceeds 20MB.")
+    header=data[:16]
+    if header.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):suffix,mime="png","image/png"
+    elif header.startswith(b"\\xff\\xd8\\xff"):suffix,mime="jpg","image/jpeg"
+    elif header.startswith(b"RIFF") and data[8:12]==b"WEBP":suffix,mime="webp","image/webp"
+    else:return fail("Only PNG, JPEG or WebP uploads are accepted.")
+    path=f"{uid()}/{project_id}/{scene_id}/manual-{__import__('uuid').uuid4()}.{suffix}"
+    from .providers import Media,ProviderError
+    try:Media().put(path,data,mime)
+    except ProviderError:return fail("Media unavailable.",503)
+    client().update("video_scenes",{"id":f"eq.{scene_id}","owner_id":f"eq.{uid()}"},{"image_path":path})
+    return jsonify(path=path),201
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/reorder")
+@login_required
+def reorder_scenes(project_id):
+    verify_csrf()
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    values=body().get("scene_ids")
+    if not isinstance(values,list) or not 1<=len(values)<=500 or len(values)!=len(set(map(str,values))):
+        return fail("Invalid scene order.")
+    scenes=client().select("video_scenes",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","select":"id"})
+    known={s["id"] for s in scenes}
+    if known!=set(values):return fail("Scene order must contain each scene exactly once.")
+    for index,scene_id in enumerate(values):
+        client().update("video_scenes",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","id":f"eq.{scene_id}"},{"position":index})
+    return jsonify({"ok":True})
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/script-draft")
+@login_required
+def script_draft(project_id):
+    verify_csrf()
+    project=project_or_404(project_id)
+    if not project:return fail("Project not found.",404)
+    from .ai import StoryboardError,generate_script
+    data=body()
+    minutes=data.get("duration_minutes",5)
+    if not isinstance(minutes,int) or isinstance(minutes,bool) or not 1<=minutes<=20:
+        return fail("Duration must be 1-20 minutes.")
+    try:
+        script=generate_script(project.get("topic") or project["title"],duration_minutes=minutes,
+            style=data.get("style","") if isinstance(data.get("style",""),str) else "")
+    except StoryboardError as exc:return fail(str(exc),422)
+    return jsonify({"script":script,"saved":False})

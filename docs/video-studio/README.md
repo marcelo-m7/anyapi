@@ -1,43 +1,29 @@
-# AI Video Studio — Personal MVP
+# AI Video Studio — local setup
 
-An isolated Flask Blueprint mounted on the existing AnyAPI application at `/video-studio`. Reuses existing encrypted session/Supabase authentication, CSRF protection, and per-user PostgREST RLS.
+Personal video-creation workspace integrated into the AnyAPI Flask application.
 
-## Implemented
-- Private dashboard, project creation, script editor, scene CRUD, visual storyboard and timeline.
-- Scene inspector: narration, video prompt, HTTPS asset URL, duration.
-- Downloadable production manifest JSON for offline rendering.
-- Owner-scoped REST endpoints and SQL RLS migration.
+## Architecture
+- Existing Flask and Supabase Auth session, login and CSRF.
+- Owner-scoped projects, scenes, jobs and private storage; changes isolated to video_studio package.
+- Worker polls atomic Supabase job claims; OpenAI provides storyboards/images/voice and Runway provides video.
+- FFmpeg composes 1080p H.264 horizontal or vertical exports and sidecar SRT.
 
-## Not implemented (do not describe as E2E cinematic generation)
-- Paid AI video/image/voice APIs, worker queues, FFmpeg render, generated subtitles, timeline drag-and-drop, 9:16 export.
-- No secrets or third-party bills are required for the current functionality.
-- Offline MP4 render from local JPG/PNG/WebP assets is available via FFmpeg CLI; it does not yet include audio or generated visuals.
-- Existing AnyAPI landing, project APIs and open PRs are unchanged.
+## Setup
+1. Create or restore a development Supabase project and apply existing AnyAPI migrations plus 0007_video_studio.sql and 0008_video_studio_pipeline.sql.
+2. Copy .env.example to .env and populate the existing SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY and ANYAPI keys.
+3. Set OPENAI_API_KEY and RUNWAYML_API_SECRET for paid generation.
+4. Optional models: STUDIO_IMAGE_MODEL=gpt-image-1, STUDIO_VOICE_MODEL=gpt-4o-mini-tts, STUDIO_VOICE=coral, STUDIO_VIDEO_MODEL=gen4.5.
+5. Run docker compose -f deploy/video-studio/compose.yml up --build.
+6. Open http://localhost:8000/video-studio after signing in.
 
-## Configuration
-1. Apply `supabase/migrations/0007_video_studio.sql` to a verified development database after checking existing migrations. **Do not apply automatically to the shared AnyAPI production database**.
-2. Set existing AnyAPI Supabase/auth environment variables.
-3. Run `pip install -e '.[test]'`, then `gunicorn main:app`.
-4. Sign in and open `/video-studio`.
+## Usage
+Create a project, write a script, draft scenes with optional AI, attach/upload reference images, generate voice/images/video selectively, render 16:9 or 9:16 and open signed media links in the editor.
+Scene-level regenerations avoid regenerating the whole episode. Production-quality consistency is guided by video_studio/CINEMATOGRAPHY.md.
 
-## HTTP endpoints
-- `GET/POST /_api/video-studio/projects`
-- `GET/PATCH /_api/video-studio/projects/<uuid>`
-- `POST /_api/video-studio/projects/<uuid>/scenes`
-- `PATCH/DELETE /_api/video-studio/scenes/<uuid>`
-- `GET /_api/video-studio/projects/<uuid>/manifest`
-
-Mutation requires the existing AnyAPI CSRF token. Every PostgREST query uses the end-user JWT and explicit owner filters; database policies enforce ownership as a second layer.
-
-## Next iterations
-Provider adapters (mock provider and credentialed production providers), async render queue with cancel/retry, durable media storage, Remotion/FFmpeg worker and independent visual QA in staging.
-
-## Offline render
-
-Install `ffmpeg` and place images in a directory named `<scene-id>.png` (or jpg/jpeg/webp) for each scene. Export the manifest from the editor, then run:
-
-```sh
-python -m video_studio.render video-manifest.json --assets-dir ./scene-images --output ./documentary.mp4
-```
-
-This creates a silent 1920×1080 H.264 MP4 with fixed-duration scenes. It makes no network requests and refuses missing assets or unsafe scene IDs.
+## Limitations
+- The connected Supabase project was INACTIVE at inspection. No migrations were executed against it.
+- Live provider and authenticated end-to-end verification are intentionally left for local validation.
+- Subtitle files are SRT sidecars, not hard-burned captions; no soundtrack mixing or final audio mastering.
+- The frontend is the existing Flask-integrated JavaScript stack, not React.
+- Worker jobs incur third-party usage charges; the editor asks before paid generation.
+- Public hosting needs additional security, rate-limit, resource and cost controls.
