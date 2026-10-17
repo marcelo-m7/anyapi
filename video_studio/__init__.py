@@ -243,3 +243,20 @@ def reorder_scenes(project_id):
     for index,scene_id in enumerate(values):
         client().update("video_scenes",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","id":f"eq.{scene_id}"},{"position":index})
     return jsonify({"ok":True})
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/script-draft")
+@login_required
+def script_draft(project_id):
+    verify_csrf()
+    project=project_or_404(project_id)
+    if not project:return fail("Project not found.",404)
+    from .ai import StoryboardError,generate_script
+    data=body()
+    minutes=data.get("duration_minutes",5)
+    if not isinstance(minutes,int) or isinstance(minutes,bool) or not 1<=minutes<=20:
+        return fail("Duration must be 1-20 minutes.")
+    try:
+        script=generate_script(project.get("topic") or project["title"],duration_minutes=minutes,
+            style=data.get("style","") if isinstance(data.get("style",""),str) else "")
+    except StoryboardError as exc:return fail(str(exc),422)
+    return jsonify({"script":script,"saved":False})
