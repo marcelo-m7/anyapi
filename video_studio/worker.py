@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
+from datetime import datetime,timezone
 from tempfile import TemporaryDirectory
 from anyapi.config import load_settings
 from anyapi.supabase import Supabase
@@ -69,12 +70,12 @@ def process_once():
     try:
         result=run_job(job,sb,Media())
         sb.service().update("video_jobs",{"id":f"eq.{job['id']}"},
-            {"status":"completed","progress":100,"result_path":result,"finished_at":"now()"})
+            {"status":"completed","progress":100,"result_path":result,"finished_at":datetime.now(timezone.utc).isoformat()})
     except Exception as exc:
         import logging
         logging.exception("Video job %s failed",job["id"])
         sb.service().update("video_jobs",{"id":f"eq.{job['id']}"},
-            {"status":"failed","error":str(exc)[:500]})
+            {"status":"failed","error":str(exc)[:500],"finished_at":datetime.now(timezone.utc).isoformat()})
     return True
 
 def main():
