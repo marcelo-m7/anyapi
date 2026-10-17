@@ -11,6 +11,7 @@ An isolated Flask Blueprint mounted on the existing AnyAPI application at `/vide
 ## Not implemented (do not describe as E2E cinematic generation)
 - Paid AI video/image/voice APIs, worker queues, FFmpeg render, generated subtitles, timeline drag-and-drop, 9:16 export.
 - No secrets or third-party bills are required for the current functionality.
+- Offline MP4 render from local JPG/PNG/WebP assets is available via FFmpeg CLI; it does not yet include audio or generated visuals.
 - Existing AnyAPI landing, project APIs and open PRs are unchanged.
 
 ## Configuration
@@ -30,3 +31,13 @@ Mutation requires the existing AnyAPI CSRF token. Every PostgREST query uses the
 
 ## Next iterations
 Provider adapters (mock provider and credentialed production providers), async render queue with cancel/retry, durable media storage, Remotion/FFmpeg worker and independent visual QA in staging.
+
+## Offline render
+
+Install `ffmpeg` and place images in a directory named `<scene-id>.png` (or jpg/jpeg/webp) for each scene. Export the manifest from the editor, then run:
+
+```sh
+python -m video_studio.render video-manifest.json --assets-dir ./scene-images --output ./documentary.mp4
+```
+
+This creates a silent 1920×1080 H.264 MP4 with fixed-duration scenes. It makes no network requests and refuses missing assets or unsafe scene IDs.
