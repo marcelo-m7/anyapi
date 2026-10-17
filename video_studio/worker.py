@@ -35,6 +35,24 @@ def run_job(job,sb,media):
         scenes=db.select("video_scenes",{"owner_id":f"eq.{owner}","project_id":f"eq.{project}",
             "select":"*","order":"position.asc"})
         if not scenes:raise ValueError("Project has no scenes")
+        if op=="episode":
+            for scene in scenes:
+                updates={}
+                sid=scene["id"]
+                if not scene.get("image_path"):
+                    result=image(scene.get("visual_prompt") or scene.get("title") or "cinematic documentary frame")
+                    path=f"{owner}/{project}/{sid}/episode-image-{job['id']}.png"
+                    media.put(path,result,"image/png")
+                    scene["image_path"]=path
+                    updates["image_path"]=path
+                if scene.get("narration","").strip() and not scene.get("voice_path"):
+                    result=voice(scene["narration"])
+                    path=f"{owner}/{project}/{sid}/episode-voice-{job['id']}.mp3"
+                    media.put(path,result,"audio/mpeg")
+                    scene["voice_path"]=path
+                    updates["voice_path"]=path
+                if updates:
+                    db.update("video_scenes",{"id":f"eq.{sid}","owner_id":f"eq.{owner}"},updates)
         with TemporaryDirectory(prefix="ai-video-studio-") as directory:
             directory=Path(directory)
             sources=[]
