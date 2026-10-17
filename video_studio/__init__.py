@@ -136,3 +136,17 @@ def manifest(project_id):
         return fail("Project not found.", 404)
     scenes = client().select("video_scenes", {"project_id": f"eq.{project_id}", "owner_id": f"eq.{uid()}", "select": "*", "order": "position.asc"})
     return jsonify({"version": 1, "project_id": str(project_id), "title": project["title"], "format": project["format"], "language": project["language"], "scenes": scenes, "duration_seconds": sum(float(s["duration_seconds"]) for s in scenes)})
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/storyboard-draft")
+@login_required
+def ai_storyboard_draft(project_id):
+    verify_csrf()
+    project = project_or_404(project_id)
+    if not project:
+        return fail("Project not found.", 404)
+    from .ai import StoryboardError, generate_storyboard
+    try:
+        scenes = generate_storyboard(project["topic"] or project["title"], project.get("script", ""))
+    except StoryboardError as exc:
+        return fail(str(exc), 422)
+    return jsonify({"scenes": scenes, "saved": False})
