@@ -5,7 +5,7 @@ import requests
 class StoryboardError(Exception):
     pass
 
-def generate_storyboard(topic: str, script: str, *, api_key: str | None = None) -> list[dict]:
+def generate_storyboard(topic: str, script: str, *, api_key: str | None = None, visual_bible: str = "") -> list[dict]:
     key = api_key or os.getenv("OPENAI_API_KEY")
     if not key:
         raise StoryboardError("OPENAI_API_KEY is not configured on the server")
@@ -21,7 +21,7 @@ def generate_storyboard(topic: str, script: str, *, api_key: str | None = None) 
             "temperature": 0.3,
             "response_format": {"type": "json_object"},
             "messages": [
-                {"role":"system","content":"You are a documentary storyboard designer. Return a JSON object with key scenes containing 1 to 12 ordered scenes. Each scene requires title, narration, visual_prompt, duration_seconds (1 to 120). Use Portuguese narration; visual prompts must be cinematic and photorealistic. Preserve documented facts and never fabricate sources."},
+                {"role":"system","content":"You are a documentary storyboard designer. Return a JSON object with key scenes containing 1 to 12 ordered scenes. Each scene requires title, narration, visual_prompt, duration_seconds (1 to 120). Use Portuguese narration; visual prompts should specify shot size, camera lens and motion, lighting, era, wardrobe, location, atmosphere and visual continuity. Respect the visual bible. Prefer accurate archive references over reconstructed footage for verifiable events. Preserve documented facts and never fabricate sources."},
                 {"role":"user","content":"TOPIC:\n"+topic[:1000]+"\nSCRIPT:\n"+script},
             ],
             "max_completion_tokens": 2500,
