@@ -45,3 +45,25 @@ def generate_storyboard(topic: str, script: str, *, api_key: str | None = None) 
         return result
     except (ValueError, TypeError, KeyError, IndexError) as exc:
         raise StoryboardError("AI returned an invalid storyboard") from exc
+
+def generate_script(topic: str, *, duration_minutes: int = 5, style: str = "") -> str:
+    """Create a documentary script draft; claims must be verified by editor."""
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        raise StoryboardError("OPENAI_API_KEY is not configured on the server")
+    if not topic.strip() or len(topic) > 1000:
+        raise StoryboardError("Topic must be 1-1000 characters")
+    duration_minutes=max(1,min(int(duration_minutes),20))
+    response=requests.post("https://api.openai.com/v1/chat/completions",
+        headers={"Authorization":"Bearer "+key,"Content-Type":"application/json"},
+        json={"model":os.getenv("VIDEO_STUDIO_STORYBOARD_MODEL","gpt-4.1-mini"),
+          "messages":[
+           {"role":"system","content":"Draft a Portuguese documentary voice-over script. Target 130 words per minute. Open with a compelling factual hook, establish chronology and tension, use short narration sentences, separate confirmed facts from speculation, avoid fabricated quotes or sources, and end with a memorable accurate conclusion. Output only the narration, not markdown."},
+           {"role":"user","content":f"Theme: {topic}\nMinutes: {duration_minutes}\nStyle bible: {style[:1500]}"}],
+          "max_completion_tokens":min(8000,duration_minutes*350)},timeout=120)
+    if not response.ok:
+        raise StoryboardError("AI provider returned HTTP "+str(response.status_code))
+    result=response.json()["choices"][0]["message"]["content"]
+    if not isinstance(result,str) or not result.strip():
+        raise StoryboardError("Provider returned an empty script")
+    return result[:60000]
