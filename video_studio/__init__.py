@@ -9,7 +9,7 @@ bp = Blueprint("video_studio", __name__)
 @bp.before_request
 def studio_upload_limit():
     # Only media upload needs a higher ceiling than the AnyAPI JSON gateway.
-    if request.endpoint == "video_studio.upload_scene_asset":
+    if request.endpoint in ("video_studio.upload_scene_asset", "video_studio.upload_soundtrack"):
         request.max_content_length = 20_100_000
 FORMATS = {"documentary", "short", "both"}
 SCENE_FIELDS = {"title", "narration", "visual_prompt", "duration_seconds", "position", "asset_url", "notes"}
@@ -79,7 +79,7 @@ def update_project(project_id):
     if not project_or_404(project_id):
         return fail("Project not found.", 404)
     data = body()
-    allowed = {k: v for k, v in data.items() if k in ("title", "topic", "script", "status", "format")}
+    allowed = {k: v for k, v in data.items() if k in ("title", "topic", "script", "status", "format", "visual_bible", "sources", "music_volume")}
     if not allowed:
         return fail("Nothing to update.")
     if "title" in allowed and (not isinstance(allowed["title"], str) or not 1 <= len(allowed["title"].strip()) <= 160):
@@ -88,6 +88,9 @@ def update_project(project_id):
         return fail("Invalid format.")
     if "status" in allowed and allowed["status"] not in ("draft", "storyboard", "ready"):
         return fail("Invalid status.")
+    if "visual_bible" in allowed and (not isinstance(allowed["visual_bible"],str) or len(allowed["visual_bible"])>5000):return fail("Invalid visual bible.")
+    if "sources" in allowed and (not isinstance(allowed["sources"],list) or len(allowed["sources"])>100):return fail("Invalid sources.")
+    if "music_volume" in allowed and (not isinstance(allowed["music_volume"],(int,float)) or not 0<=allowed["music_volume"]<=1):return fail("Invalid music level.")
     rows = client().update("video_projects", {"id": f"eq.{project_id}", "owner_id": f"eq.{uid()}"}, allowed)
     return jsonify(rows[0]) if rows else fail("Project not found.", 404)
 
@@ -152,7 +155,7 @@ def ai_storyboard_draft(project_id):
         return fail("Project not found.", 404)
     from .ai import StoryboardError, generate_storyboard
     try:
-        scenes = generate_storyboard(project["topic"] or project["title"], project.get("script", ""))
+        scenes = generate_storyboard(project["topic"] or project["title"], project.get("script", ""), visual_bible=project.get("visual_bible", ""))
     except StoryboardError as exc:
         return fail(str(exc), 422)
     return jsonify({"scenes": scenes, "saved": False})
@@ -202,6 +205,8 @@ def project_media(project_id):
     jobs=client().select("video_jobs",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}",
          "select":"result_path","status":"eq.completed"})
     allowed={x.get(field) for x in scenes for field in ("image_path","video_path","voice_path","subtitles_path")}
+    project=project_or_404(project_id)
+    allowed.add(project.get("soundtrack_path"))
     allowed.update(j.get("result_path") for j in jobs)
     allowed.update(str(j.get("result_path"))+".srt" for j in jobs if j.get("result_path"))
     if path not in allowed:return fail("Asset not found.",404)
@@ -266,3 +271,26 @@ def script_draft(project_id):
             style=data.get("style","") if isinstance(data.get("style",""),str) else "")
     except StoryboardError as exc:return fail(str(exc),422)
     return jsonify({"script":script,"saved":False})
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/soundtrack")
+@login_required
+def upload_soundtrack(project_id):
+    verify_csrf()
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    upload=request.files.get("file")
+    if not upload:return fail("Soundtrack file required.")
+    data=upload.read(20_000_001)
+    if len(data)>20_000_000:return fail("Soundtrack exceeds 20 MB.")
+    # MP3 sync/header ID3, or RIFF WAVE.
+    if data.startswith(b"ID3") or (len(data)>2 and data[0]==255 and (data[1]&0xE0)==0xE0):
+        suffix,mime="mp3","audio/mpeg"
+    elif data.startswith(b"RIFF") and data[8:12]==b"WAVE":
+        suffix,mime="wav","audio/wav"
+    else:return fail("Only MP3 or WAV supported.")
+    from uuid import uuid4
+    path=f"{uid()}/{project_id}/music/{uuid4()}.{suffix}"
+    from .providers import Media,ProviderError
+    try:Media().put(path,data,mime)
+    except ProviderError:return fail("Media unavailable.",503)
+    client().update("video_projects",{"id":f"eq.{project_id}","owner_id":f"eq.{uid()}"},{"soundtrack_path":path})
+    return jsonify(path=path),201
