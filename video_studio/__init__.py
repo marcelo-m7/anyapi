@@ -228,3 +228,18 @@ def upload_scene_asset(project_id):
     except ProviderError:return fail("Media unavailable.",503)
     client().update("video_scenes",{"id":f"eq.{scene_id}","owner_id":f"eq.{uid()}"},{"image_path":path})
     return jsonify(path=path),201
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/reorder")
+@login_required
+def reorder_scenes(project_id):
+    verify_csrf()
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    values=body().get("scene_ids")
+    if not isinstance(values,list) or not 1<=len(values)<=500 or len(values)!=len(set(map(str,values))):
+        return fail("Invalid scene order.")
+    scenes=client().select("video_scenes",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","select":"id"})
+    known={s["id"] for s in scenes}
+    if known!=set(values):return fail("Scene order must contain each scene exactly once.")
+    for index,scene_id in enumerate(values):
+        client().update("video_scenes",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","id":f"eq.{scene_id}"},{"position":index})
+    return jsonify({"ok":True})
