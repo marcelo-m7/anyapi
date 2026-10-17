@@ -53,6 +53,8 @@ def run_job(job,sb,media):
                     updates["voice_path"]=path
                 if updates:
                     db.update("video_scenes",{"id":f"eq.{sid}","owner_id":f"eq.{owner}"},updates)
+        project_row=db.select_one("video_projects",{"id":f"eq.{project}","owner_id":f"eq.{owner}"})
+        if not project_row:raise ValueError("Project not found")
         with TemporaryDirectory(prefix="ai-video-studio-") as directory:
             directory=Path(directory)
             sources=[]
@@ -71,7 +73,14 @@ def run_job(job,sb,media):
                     "narration":s.get("narration",""),"duration":float(s["duration_seconds"])})
             portrait=bool(job.get("options",{}).get("portrait"))
             output=directory/"final.mp4"
-            render=compose(sources,output,portrait=portrait)
+            soundtrack=None
+            if project_row.get("soundtrack_path"):
+                soundtrack=directory/"soundtrack.mp3"
+                track_path=project_row["soundtrack_path"]
+                soundtrack=directory/("soundtrack.wav" if track_path.lower().endswith(".wav") else "soundtrack.mp3")
+                soundtrack.write_bytes(media.get(track_path))
+            render=compose(sources,output,portrait=portrait,soundtrack=soundtrack,
+                           music_volume=float(project_row.get("music_volume") or 0.15))
             prefix="vertical" if portrait else "horizontal"
             target=f"{owner}/{project}/renders/{job['id']}-{prefix}.mp4"
             media.put(target,output.read_bytes(),"video/mp4")
