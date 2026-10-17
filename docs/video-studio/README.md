@@ -9,7 +9,7 @@ Personal video-creation workspace integrated into the AnyAPI Flask application.
 - FFmpeg composes 1080p H.264 horizontal or vertical exports and sidecar SRT.
 
 ## Setup
-1. Create or restore a development Supabase project and apply existing AnyAPI migrations plus 0007_video_studio.sql and 0008_video_studio_pipeline.sql.
+1. Create or restore a development Supabase project and apply existing AnyAPI migrations plus 0007_video_studio.sql and 0008_video_studio_pipeline.sql and 0009_video_studio_editorial.sql.
 2. Copy .env.example to .env and populate the existing SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY and ANYAPI keys.
 3. Set OPENAI_API_KEY and RUNWAYML_API_SECRET for paid generation.
 4. Optional models: STUDIO_IMAGE_MODEL=gpt-image-1, STUDIO_VOICE_MODEL=gpt-4o-mini-tts, STUDIO_VOICE=coral, STUDIO_VIDEO_MODEL=gen4.5.
@@ -27,3 +27,6 @@ Scene-level regenerations avoid regenerating the whole episode. Production-quali
 - The frontend is the existing Flask-integrated JavaScript stack, not React.
 - Worker jobs incur third-party usage charges; the editor asks before paid generation.
 - Public hosting needs additional security, rate-limit, resource and cost controls.
+## Editorial finishing
+
+Visual bible is persisted per project and passed to AI storyboard creation to maintain shot continuity. The project also saves a manually verified source ledger. Add a personally licensed MP3/WAV soundtrack from the editor; FFmpeg mixes it underneath narration at adjustable volume. The soundtrack must be licensed for intended publication.
