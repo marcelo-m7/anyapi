@@ -294,3 +294,22 @@ def upload_soundtrack(project_id):
     except ProviderError:return fail("Media unavailable.",503)
     client().update("video_projects",{"id":f"eq.{project_id}","owner_id":f"eq.{uid()}"},{"soundtrack_path":path})
     return jsonify(path=path),201
+
+@bp.get("/_api/video-studio/readiness")
+@login_required
+def readiness():
+    """Deployment diagnostics without disclosing environment secrets."""
+    import os
+    settings=current_app.config["ANYAPI_SETTINGS"]
+    return jsonify(
+        app="video-studio",
+        supabase=bool(settings.supabase_url and settings.supabase_anon_key),
+        media_backend="supabase-storage",
+        storyboards=bool(os.getenv("OPENAI_API_KEY")),
+        image_generation=bool(os.getenv("OPENAI_API_KEY")),
+        voice_generation=bool(os.getenv("OPENAI_API_KEY")),
+        video_generation=bool(os.getenv("RUNWAYML_API_SECRET")),
+        worker_required=True,
+        runtime="serverless" if os.getenv("VERCEL") else "container",
+        status="configuration_report_only",
+    )

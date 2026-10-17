@@ -53,7 +53,5 @@ end;
 $$;
 revoke all on function public.video_claim_job() from public, anon, authenticated;
 grant execute on function public.video_claim_job() to service_role;
--- Private media bucket. Service-role worker writes/reads and Flask exposes short-lived signed URLs.
-insert into storage.buckets(id,name,public,file_size_limit)
-values ('video-studio','video-studio',false,104857600)
-on conflict(id) do nothing;
+-- Storage bucket is provisioned separately when Supabase Storage service is available.
+-- See docs/video-studio/STORAGE.md for setup instructions.
