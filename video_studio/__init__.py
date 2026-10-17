@@ -155,7 +155,7 @@ def ai_storyboard_draft(project_id):
         return fail("Project not found.", 404)
     from .ai import StoryboardError, generate_storyboard
     try:
-        scenes = generate_storyboard(project["topic"] or project["title"], project.get("script", ""))
+        scenes = generate_storyboard(project["topic"] or project["title"], project.get("script", ""), visual_bible=project.get("visual_bible", ""))
     except StoryboardError as exc:
         return fail(str(exc), 422)
     return jsonify({"scenes": scenes, "saved": False})
