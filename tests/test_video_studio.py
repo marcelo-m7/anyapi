@@ -1,6 +1,9 @@
 """Video Studio route contract smoke tests, no live Supabase credentials."""
 import uuid
 from unittest.mock import patch
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import main
 
 def test_video_studio_requires_login():
