@@ -7,6 +7,7 @@ from anyapi.runtime.code_runner import CodeRunner
 from anyapi.auth import bp as auth_bp, csrf_token, current_user
 from anyapi.management import bp as management_bp
 from anyapi.gateway import bp as gateway_bp
+from video_studio import bp as video_studio_bp
 
 settings = load_settings()
 app = Flask(__name__)
@@ -89,4 +90,5 @@ async function versions(){try{by('versions').classList.remove('hide');by('versio
 load();
 </script></html>""",endpoint_id=endpoint_id,csrf=csrf_token())
 
+app.register_blueprint(video_studio_bp)
 app.register_blueprint(gateway_bp)
