@@ -59,7 +59,7 @@ class Media:
         self.key=env("SUPABASE_SERVICE_ROLE_KEY")
         self.bucket="video-studio"
     def headers(self):
-        return {"apikey":self.key,"Authorization":"Bearer "+self.key}
+        return {"apikey":self.key,**({} if self.key.startswith("sb_secret_") else {"Authorization":"Bearer "+self.key})}
     def put(self,path,data,mime):
         if not data:raise ProviderError("Cannot store empty file")
         r=requests.post(self.root+"/object/"+self.bucket+"/"+quote(path,safe="/"),
