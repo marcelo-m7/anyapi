@@ -12,7 +12,7 @@ def probe(path):
         "-of","json",str(path)],capture_output=True,text=True,check=True,timeout=30)
     return float(json.loads(result.stdout)["format"]["duration"])
 
-def compose(scenes,output,portrait=False,subtitles=True):
+def compose(scenes,output,portrait=False,subtitles=True,soundtrack=None,music_volume=0.15):
     """scenes: list of dict(image|video, audio?, narration, duration)."""
     output=Path(output)
     output.parent.mkdir(parents=True,exist_ok=True)
@@ -48,6 +48,15 @@ def compose(scenes,output,portrait=False,subtitles=True):
         playlist.write_text("".join("file '"+p.as_posix()+"'\n" for p in clips))
         master=tmp/"master.mp4"
         run(["-f","concat","-safe","0","-i",playlist,"-c","copy",master])
+        if soundtrack:
+            music=Path(soundtrack)
+            if not music.is_file():raise ValueError("Missing soundtrack")
+            mix=tmp/"master-with-music.mp4"
+            volume=max(0.0,min(float(music_volume),1.0))
+            run(["-i",master,"-stream_loop","-1","-i",music,
+                 "-filter_complex",f"[1:a]volume={volume}[music];[0:a][music]amix=inputs=2:duration=first:normalize=0[a]",
+                 "-map","0:v:0","-map","[a]","-c:v","copy","-c:a","aac","-b:a","192k",mix])
+            master=mix
         if subtitles:
             srt=tmp/"captions.srt"
             elapsed=0.0
