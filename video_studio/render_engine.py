@@ -64,8 +64,7 @@ def compose(scenes,output,portrait=False,subtitles=True):
             if parts:
                 # Relative path is resolved under cwd; moving to tmp avoids unescaped path quoting.
                 relative=srt.name
-                run(["-i",master,"-vf","subtitles="+relative,"-c:v","libx264","-preset","veryfast",
-                     "-c:a","copy",output] if False else ["-i",master,"-c","copy",output])
+                run(["-i",master,"-c","copy",output])
                 # Sidecar SRT is supplied for editable subtitles. Hard-burn is optional downstream.
             else:run(["-i",master,"-c","copy",output])
         else:run(["-i",master,"-c","copy",output])
