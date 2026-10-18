@@ -71,6 +71,21 @@ class Media:
             headers=self.headers(),timeout=180)
         if not r.ok:raise ProviderError("Download HTTP "+str(r.status_code))
         return r.content
+    def signed_upload(self,path):
+        """Allow direct uploads without proxying 100 MB files through Vercel."""
+        r=requests.post(self.root+"/object/upload/sign/"+self.bucket+"/"+quote(path,safe="/"),
+            json={},headers=self.headers(),timeout=20)
+        if not r.ok:raise ProviderError("Signed upload HTTP "+str(r.status_code))
+        data=r.json()
+        url=data.get("url","")
+        if not url.startswith("/"):raise ProviderError("Invalid signed upload response")
+        # URL already includes short-lived token from Supabase. Never persist it.
+        return self.root+url
+    def info(self,path):
+        r=requests.get(self.root+"/object/info/"+self.bucket+"/"+quote(path,safe="/"),
+            headers=self.headers(),timeout=25)
+        if not r.ok:raise ProviderError("Media metadata HTTP "+str(r.status_code))
+        return r.json()
     def signed(self,path,seconds=600):
         r=requests.post(self.root+"/object/sign/"+self.bucket+"/"+quote(path,safe="/"),
             json={"expiresIn":seconds},headers=self.headers(),timeout=20)
