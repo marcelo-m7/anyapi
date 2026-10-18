@@ -12,7 +12,7 @@ def studio_upload_limit():
     if request.endpoint in ("video_studio.upload_scene_asset", "video_studio.upload_soundtrack"):
         request.max_content_length = 20_100_000
 FORMATS = {"documentary", "short", "both"}
-SCENE_FIELDS = {"title", "narration", "visual_prompt", "duration_seconds", "position", "asset_url", "notes"}
+SCENE_FIELDS = {"title", "narration", "visual_prompt", "duration_seconds", "position", "asset_url", "notes", "trim_start_seconds"}
 
 def client():
     user = current_user()
@@ -125,6 +125,10 @@ def update_scene(scene_id):
             return fail("Invalid text field.")
     if "asset_url" in values and values["asset_url"] is not None and (not isinstance(values["asset_url"], str) or len(values["asset_url"]) > 2000 or not values["asset_url"].startswith("https://")):
         return fail("Asset URL must use HTTPS.")
+    if "trim_start_seconds" in values:
+        from .workflow import validate_trim_start
+        try:values["trim_start_seconds"]=validate_trim_start(values["trim_start_seconds"])
+        except ValueError:return fail("Invalid clip in-point.")
     rows = client().update("video_scenes", {"id": f"eq.{scene_id}", "owner_id": f"eq.{uid()}"}, values)
     return jsonify(rows[0]) if rows else fail("Scene not found.", 404)
 
@@ -250,7 +254,9 @@ def reorder_scenes(project_id):
         return fail("Invalid scene order.")
     scenes=client().select("video_scenes",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","select":"id"})
     known={s["id"] for s in scenes}
-    if known!=set(values):return fail("Scene order must contain each scene exactly once.")
+    from .workflow import validate_reorder
+    try:validate_reorder(values,known)
+    except ValueError:return fail("Scene order must contain each scene exactly once.")
     for index,scene_id in enumerate(values):
         client().update("video_scenes",{"owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","id":f"eq.{scene_id}"},{"position":index})
     return jsonify({"ok":True})
@@ -313,3 +319,50 @@ def readiness():
         runtime="serverless" if os.getenv("VERCEL") else "container",
         status="configuration_report_only",
     )
+
+@bp.get("/_api/video-studio/projects/<uuid:project_id>/readiness")
+@login_required
+def project_readiness(project_id):
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    from .workflow import render_readiness
+    scenes=client().select("video_scenes",{"project_id":f"eq.{project_id}","owner_id":f"eq.{uid()}","select":"id,title,duration_seconds,image_path,video_path","order":"position.asc"})
+    return jsonify(render_readiness(scenes))
+
+@bp.post("/_api/video-studio/scenes/<uuid:scene_id>/duplicate")
+@login_required
+def duplicate_scene_route(scene_id):
+    verify_csrf()
+    scene=scene_or_404(scene_id)
+    if not scene:return fail("Scene not found.",404)
+    from .workflow import duplicate_scene
+    scenes=client().select("video_scenes",{"project_id":f"eq.{scene['project_id']}","owner_id":f"eq.{uid()}","select":"position","order":"position.desc","limit":"1"})
+    next_pos=int(scenes[0]["position"])+1 if scenes else 0
+    duplicate=duplicate_scene(scene,next_pos)
+    return jsonify(client().insert("video_scenes",duplicate)),201
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/jobs/<uuid:job_id>/cancel")
+@login_required
+def cancel_job(project_id,job_id):
+    verify_csrf()
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    job=client().select_one("video_jobs",{"id":f"eq.{job_id}","owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","select":"id,status"})
+    if not job:return fail("Job not found.",404)
+    if job["status"]!="queued":return fail("Only queued jobs can be cancelled.",409)
+    rows=current_app.extensions["anyapi.supabase"].service().update("video_jobs",
+        {"id":f"eq.{job_id}","owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","status":"eq.queued"},
+        {"status":"cancelled"})
+    if not rows:return fail("Job was already claimed.",409)
+    return jsonify(rows[0])
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/jobs/<uuid:job_id>/retry")
+@login_required
+def retry_job(project_id,job_id):
+    verify_csrf()
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    job=client().select_one("video_jobs",{"id":f"eq.{job_id}","owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","select":"id,status,attempt"})
+    if not job:return fail("Job not found.",404)
+    if job["status"]!="failed" or job["attempt"]>=3:return fail("Job cannot be retried.",409)
+    rows=current_app.extensions["anyapi.supabase"].service().update("video_jobs",
+        {"id":f"eq.{job_id}","owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","status":"eq.failed","attempt":f"lt.3"},
+        {"status":"queued","progress":0,"error":None,"started_at":None,"finished_at":None})
+    return jsonify(rows[0]) if rows else fail("Job is no longer retryable.",409)

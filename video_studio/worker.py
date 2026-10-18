@@ -70,7 +70,8 @@ def run_job(job,sb,media):
                     audio.write_bytes(media.get(s["voice_path"]))
                 sources.append({"video":file if s.get("video_path") else None,
                     "image":None if s.get("video_path") else file,"audio":audio,
-                    "narration":s.get("narration",""),"duration":float(s["duration_seconds"])})
+                    "narration":s.get("narration",""),"duration":float(s["duration_seconds"]),
+                    "trim_start_seconds":float(s.get("trim_start_seconds") or 0)})
             portrait=bool(job.get("options",{}).get("portrait"))
             output=directory/"final.mp4"
             soundtrack=None
