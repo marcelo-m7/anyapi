@@ -14,7 +14,7 @@ def duplicate_scene(source:dict,position:int)->dict:
             "narration":source.get("narration") or "",
             "visual_prompt":source.get("visual_prompt") or "",
             "notes":source.get("notes") or "",
-            "duration_seconds":source["duration_seconds"]}
+            "duration_seconds":source["duration_seconds"],"trim_start_seconds":source.get("trim_start_seconds") or 0}
 
 def render_readiness(scenes:list[dict])->dict:
     missing=[s["id"] for s in scenes if not (s.get("image_path") or s.get("video_path"))]
