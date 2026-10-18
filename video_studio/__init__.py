@@ -366,3 +366,52 @@ def retry_job(project_id,job_id):
         {"id":f"eq.{job_id}","owner_id":f"eq.{uid()}","project_id":f"eq.{project_id}","status":"eq.failed","attempt":f"lt.3"},
         {"status":"queued","progress":0,"error":None,"started_at":None,"finished_at":None})
     return jsonify(rows[0]) if rows else fail("Job is no longer retryable.",409)
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/media/upload-intent")
+@login_required
+def media_upload_intent(project_id):
+    """Issue a single-object presigned upload URL after checking scene ownership."""
+    verify_csrf()
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    data=body()
+    from uuid import UUID,uuid4
+    from .uploads import validate_upload
+    try:scene_id=UUID(str(data.get("scene_id")))
+    except (ValueError,TypeError):return fail("Valid scene id required.")
+    scene=scene_or_404(scene_id)
+    if not scene or scene["project_id"]!=str(project_id):return fail("Scene not found.",404)
+    mime=data.get("mime")
+    try:ext,_,_=validate_upload(mime,data.get("size"))
+    except ValueError:return fail("Unsupported file type or size.")
+    path=f"{uid()}/{project_id}/{scene_id}/manual-{uuid4()}{ext}"
+    from .providers import Media,ProviderError
+    try:url=Media().signed_upload(path)
+    except ProviderError:return fail("Could not initiate upload.",503)
+    return jsonify({"path":path,"upload_url":url}),201
+
+@bp.post("/_api/video-studio/projects/<uuid:project_id>/media/commit")
+@login_required
+def media_upload_commit(project_id):
+    """Persist only verified user-owned objects, never caller-supplied URLs."""
+    verify_csrf()
+    if not project_or_404(project_id):return fail("Project not found.",404)
+    data=body()
+    from uuid import UUID
+    from .uploads import validate_upload,allowed_path
+    try:scene_id=UUID(str(data.get("scene_id")))
+    except (ValueError,TypeError):return fail("Valid scene id required.")
+    scene=scene_or_404(scene_id)
+    if not scene or scene["project_id"]!=str(project_id):return fail("Scene not found.",404)
+    path=data.get("path")
+    if not allowed_path(path,str(uid()),str(project_id),str(scene_id)):
+        return fail("Invalid media path.")
+    from .providers import Media,ProviderError
+    try:metadata=Media().info(path)
+    except ProviderError:return fail("Uploaded media not found.",404)
+    info=metadata.get("metadata") or {}
+    mime=info.get("mimetype")
+    try:ext,field,_=validate_upload(mime,int(info.get("size",0)))
+    except (ValueError,TypeError):return fail("Invalid media metadata.",400)
+    if not path.endswith(ext):return fail("Media extension does not match content type.")
+    rows=client().update("video_scenes",{"id":f"eq.{scene_id}","project_id":f"eq.{project_id}","owner_id":f"eq.{uid()}"},{field:path})
+    return jsonify(rows[0]) if rows else fail("Scene not found.",404)
