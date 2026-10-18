@@ -29,3 +29,9 @@ def timestamp_srt(t:float)->str:
     minutes,remaining=divmod(remaining,60000)
     seconds,ms=divmod(remaining,1000)
     return f"{hours:02}:{minutes:02}:{seconds:02},{ms:03}"
+
+def validate_trim_start(value):
+    if value is None:return 0
+    if isinstance(value,bool) or not isinstance(value,(int,float)) or not 0<=value<=600:
+        raise ValueError("Trim offset must be from 0 to 600 seconds")
+    return value
