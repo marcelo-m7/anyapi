@@ -12,7 +12,7 @@ def studio_upload_limit():
     if request.endpoint in ("video_studio.upload_scene_asset", "video_studio.upload_soundtrack"):
         request.max_content_length = 20_100_000
 FORMATS = {"documentary", "short", "both"}
-SCENE_FIELDS = {"title", "narration", "visual_prompt", "duration_seconds", "position", "asset_url", "notes"}
+SCENE_FIELDS = {"title", "narration", "visual_prompt", "duration_seconds", "position", "asset_url", "notes", "trim_start_seconds"}
 
 def client():
     user = current_user()
@@ -125,6 +125,10 @@ def update_scene(scene_id):
             return fail("Invalid text field.")
     if "asset_url" in values and values["asset_url"] is not None and (not isinstance(values["asset_url"], str) or len(values["asset_url"]) > 2000 or not values["asset_url"].startswith("https://")):
         return fail("Asset URL must use HTTPS.")
+    if "trim_start_seconds" in values:
+        from .workflow import validate_trim_start
+        try:values["trim_start_seconds"]=validate_trim_start(values["trim_start_seconds"])
+        except ValueError:return fail("Invalid clip in-point.")
     rows = client().update("video_scenes", {"id": f"eq.{scene_id}", "owner_id": f"eq.{uid()}"}, values)
     return jsonify(rows[0]) if rows else fail("Scene not found.", 404)
 
