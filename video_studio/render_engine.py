@@ -30,7 +30,9 @@ def compose(scenes,output,portrait=False,subtitles=True,soundtrack=None,music_vo
             if not src.is_file():raise ValueError("Scene asset missing")
             clip=tmp/f"scene-{i:04d}.mp4"
             vf=f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps={fps},format=yuv420p"
-            args=(["-stream_loop","-1","-i",src] if scene.get("video") else ["-loop","1","-i",src])
+            offset=float(scene.get("trim_start_seconds") or 0)
+            if not 0<=offset<=600:raise ValueError("Invalid source in-point")
+            args=(["-ss",str(offset),"-stream_loop","-1","-i",src] if scene.get("video") else ["-loop","1","-i",src])
             # Each scene has its own audio track so final concatenation stays synchronized.
             voice=scene.get("audio")
             if voice and Path(voice).is_file():
